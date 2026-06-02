@@ -114,7 +114,7 @@ func (m HostsScreen) Update(msg tea.Msg) (screen, tea.Cmd) {
 		}
 	case connectedMsg:
 		m.connect = ""
-		return m, push(NewServiceList(msg.kc, msg.host))
+		return m, push(NewServiceList(msg.kc, msg.host, m.store))
 	case errMsg:
 		m.connect = ""
 		m.err = msg.err

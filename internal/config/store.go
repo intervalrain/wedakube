@@ -158,6 +158,21 @@ func (s *Store) GetTarget(repoPath string) (Target, bool, error) {
 	return t, ok, nil
 }
 
+// TargetsForHost 回傳屬於某 host 的部署目標（Host 相符，或舊版 SSHAlias 相符）。
+func (s *Store) TargetsForHost(host string) ([]Target, error) {
+	st, err := s.load()
+	if err != nil {
+		return nil, err
+	}
+	var out []Target
+	for _, t := range st.Targets {
+		if t.Host == host || (t.Host == "" && t.SSHAlias == host) {
+			out = append(out, t)
+		}
+	}
+	return out, nil
+}
+
 func (s *Store) PutTarget(t Target) error {
 	st, err := s.load()
 	if err != nil {

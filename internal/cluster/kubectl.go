@@ -23,6 +23,9 @@ func NewKubectl(ssh *SSH, ns string) *Kubectl {
 
 func (k *Kubectl) Namespace() string { return k.ns }
 
+// SSH 讓上層（部署流程）取用底層連線。
+func (k *Kubectl) SSH() *SSH { return k.ssh }
+
 // ResolveWedaNamespace 找出結尾為 -weda 的 tenant namespace（README 的作法）。
 func ResolveWedaNamespace(ctx context.Context, ssh *SSH) (string, error) {
 	out, err := ssh.Run(ctx, `kubectl get ns -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}'`)
