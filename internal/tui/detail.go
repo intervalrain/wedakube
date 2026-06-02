@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/intervalrain/wedakube/internal/cluster"
+	"github.com/intervalrain/wedakube/internal/config"
 	"github.com/intervalrain/wedakube/internal/model"
 )
 
@@ -22,11 +23,13 @@ var (
 type ServiceDetail struct {
 	kubectl *cluster.Kubectl
 	host    string
+	store   *config.Store
 	svc     model.Service
+	target  *config.Target // 非 nil = 此服務有部署目標，可按 D
 }
 
-func NewServiceDetail(kc *cluster.Kubectl, host string, svc model.Service) ServiceDetail {
-	return ServiceDetail{kubectl: kc, host: host, svc: svc}
+func NewServiceDetail(kc *cluster.Kubectl, host string, store *config.Store, svc model.Service, target *config.Target) ServiceDetail {
+	return ServiceDetail{kubectl: kc, host: host, store: store, svc: svc, target: target}
 }
 
 func (m ServiceDetail) Init() tea.Cmd { return nil }
@@ -52,6 +55,10 @@ func (m ServiceDetail) Update(msg tea.Msg) (screen, tea.Cmd) {
 		return m, push(NewTextScreen(m.kubectl, "resource · "+name, "top pod -l "+sel))
 	case "k":
 		return m, push(NewTextScreen(m.kubectl, "networking", "get svc"))
+	case "D":
+		if m.target != nil {
+			return m, push(NewDeployScreen(m.kubectl.SSH(), m.store, *m.target))
+		}
 	}
 	return m, nil
 }
@@ -73,8 +80,14 @@ func (m ServiceDetail) View() string {
 	}
 	inspect := groupStyle.Render("INSPECT") + dimStyle.Render("  read-only") + "\n" +
 		item("s", "status") + item("i", "info") + item("l", "logs") + item("u", "resource") + item("k", "networking")
-	lifecycle := groupStyle.Render("LIFECYCLE") + dimStyle.Render("  needs WRITE mode — coming next") + "\n" +
-		dimStyle.Render("  D deploy   R restart   ↑ start   ↓ stop   z rollback")
+	var lifecycle string
+	if m.target != nil {
+		lifecycle = groupStyle.Render("LIFECYCLE") + dimStyle.Render("  build + push + rollout this repo") + "\n" +
+			item("D", "deploy") + dimStyle.Render("  R restart   ↑ start   ↓ stop   z rollback (coming next)")
+	} else {
+		lifecycle = groupStyle.Render("LIFECYCLE") + dimStyle.Render("  no pin/repo — add one in L2 to deploy") + "\n" +
+			dimStyle.Render("  D deploy   R restart   ↑ start   ↓ stop   z rollback")
+	}
 	debug := groupStyle.Render("DEBUG") + dimStyle.Render("  coming next") + "\n" +
 		dimStyle.Render("  x exec   f port-forward   w swagger")
 
