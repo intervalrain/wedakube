@@ -6,11 +6,13 @@ import (
 	"io"
 	"os"
 	"os/exec"
+
+	"github.com/intervalrain/wedakube/internal/config"
 )
 
 // BuildAndPush 用 buildx 建 linux/amd64 image 並推到 registry，一步完成。
 // 本地是 arm64、node 是 amd64，所以 --platform 不可省。FEED_PAT 由環境變數帶入私有 NuGet restore。
-func BuildAndPush(ctx context.Context, t Target, tag string, emit Emitter) error {
+func BuildAndPush(ctx context.Context, t config.Target, tag string, emit Emitter) error {
 	image := t.ImageRepo + ":" + tag
 
 	args := []string{

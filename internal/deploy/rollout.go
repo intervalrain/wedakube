@@ -8,10 +8,11 @@ import (
 	"time"
 
 	"github.com/intervalrain/wedakube/internal/cluster"
+	"github.com/intervalrain/wedakube/internal/config"
 )
 
 // SetImage 更新既有 deployment 的 image（OTA / 版本 bump）。
-func SetImage(ctx context.Context, ssh *cluster.SSH, t Target, tag string) error {
+func SetImage(ctx context.Context, ssh *cluster.SSH, t config.Target, tag string) error {
 	cmd := fmt.Sprintf("kubectl -n %s set image deploy/%s %s=%s:%s",
 		t.Namespace, t.Service, t.Service, t.ImageRepo, tag)
 	_, err := ssh.Run(ctx, cmd)
@@ -32,7 +33,7 @@ type deployStatus struct {
 }
 
 // WaitRollout 輪詢 deployment 狀態驅動進度，直到全部 ready 或 ctx timeout。
-func WaitRollout(ctx context.Context, ssh *cluster.SSH, t Target, emit Emitter) error {
+func WaitRollout(ctx context.Context, ssh *cluster.SSH, t config.Target, emit Emitter) error {
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 
@@ -74,7 +75,7 @@ func WaitRollout(ctx context.Context, ssh *cluster.SSH, t Target, emit Emitter) 
 
 // Diagnose 在 rollout 失敗時抓 describe + logs（保留證據）。
 // 先抓當前 logs（pod 卡住但沒重啟時才看得到原因），previous 只在有重啟時補充。
-func Diagnose(ctx context.Context, ssh *cluster.SSH, t Target) string {
+func Diagnose(ctx context.Context, ssh *cluster.SSH, t config.Target) string {
 	desc, _ := ssh.Run(ctx, fmt.Sprintf("kubectl -n %s describe pod -l app=%s | tail -n 40", t.Namespace, t.Service))
 	cur, _ := ssh.Run(ctx, fmt.Sprintf("kubectl -n %s logs deploy/%s --tail=60 2>&1", t.Namespace, t.Service))
 
@@ -88,7 +89,7 @@ func Diagnose(ctx context.Context, ssh *cluster.SSH, t Target) string {
 }
 
 // Rollback 退回上一個 revision。
-func Rollback(ctx context.Context, ssh *cluster.SSH, t Target) error {
+func Rollback(ctx context.Context, ssh *cluster.SSH, t config.Target) error {
 	_, err := ssh.Run(ctx, fmt.Sprintf("kubectl -n %s rollout undo deploy/%s", t.Namespace, t.Service))
 	return err
 }

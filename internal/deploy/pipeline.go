@@ -6,13 +6,14 @@ import (
 	"time"
 
 	"github.com/intervalrain/wedakube/internal/cluster"
+	"github.com/intervalrain/wedakube/internal/config"
 )
 
 const rolloutTimeout = 3 * time.Minute
 
 // Deploy 跑完整流程：算 tag → buildx+push → (首次 apply / 既有 set image) → 等 rollout。
 // rollout 失敗時抓 logs，若是既有服務則自動 rollback。回傳這次用的 tag。
-func Deploy(ctx context.Context, ssh *cluster.SSH, store *Store, t Target, date string, rollbackOnFail bool, emit Emitter) (string, error) {
+func Deploy(ctx context.Context, ssh *cluster.SSH, store *config.Store, t config.Target, date string, rollbackOnFail bool, emit Emitter) (string, error) {
 	n, err := store.NextBuildNumber(t.Service, date)
 	if err != nil {
 		return "", err

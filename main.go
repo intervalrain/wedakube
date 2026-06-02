@@ -9,10 +9,12 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/intervalrain/wedakube/internal/cluster"
+	"github.com/intervalrain/wedakube/internal/config"
 	"github.com/intervalrain/wedakube/internal/tui"
 )
 
-const sshAlias = "my-cluster"
+// defaultHost：尚未做 L1 host list 前的暫時預設連線（alias-only）。
+var defaultHost = config.Host{Name: "my-cluster", Alias: "my-cluster"}
 
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "deploy" {
@@ -23,7 +25,7 @@ func main() {
 }
 
 func runTUI() {
-	ssh := cluster.NewSSH(sshAlias)
+	ssh := cluster.NewSSH(defaultHost)
 	defer ssh.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)

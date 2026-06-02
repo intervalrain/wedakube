@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/intervalrain/wedakube/internal/cluster"
+	"github.com/intervalrain/wedakube/internal/config"
 )
 
 // 用 nginx stand-in 打真 cluster，驗證 cluster 端機制（不需要 FEED_PAT / buildx）。
@@ -15,10 +16,10 @@ func TestRolloutMechanicsIntegration(t *testing.T) {
 		t.Skip("integration test; needs cluster access")
 	}
 
-	ssh := cluster.NewSSH("my-cluster")
+	ssh := cluster.NewSSH(config.Host{Name: "my-cluster", Alias: "my-cluster"})
 	defer ssh.Close()
 
-	tgt := Target{
+	tgt := config.Target{
 		Service:   "pipetest",
 		Namespace: "wedakube-dev",
 		ImageRepo: "nginx", // stand-in：nginx:<tag>
