@@ -48,7 +48,8 @@ func runDeploy(args []string) {
 	}
 
 	date := time.Now().Format("20060102")
-	tag, err := deploy.Deploy(context.Background(), ssh, store, t, date, true, emit)
+	feedPAT := deploy.ResolveFeedPAT(store)
+	tag, err := deploy.Deploy(context.Background(), ssh, store, t, date, feedPAT, true, emit)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "deploy failed:", err)
 		os.Exit(1)

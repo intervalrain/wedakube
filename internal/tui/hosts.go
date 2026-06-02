@@ -105,6 +105,8 @@ func (m HostsScreen) Update(msg tea.Msg) (screen, tea.Cmd) {
 				m.store.DeleteHost(h.Name)
 				return m.reload(), nil
 			}
+		case "S":
+			return m, push(NewSetup(m.store))
 		case "enter":
 			if h, ok := m.selected(); ok {
 				m.connect = h.Name
@@ -141,7 +143,7 @@ func (m HostsScreen) View() string {
 		status = statusStyle.Render(time.Now().Format("15:04:05"))
 	}
 
-	footer := footerStyle.Render("↑/↓ navigate · enter connect · n new · e edit · d delete · i info · r refresh · q quit")
+	footer := footerStyle.Render("↑/↓ · enter connect · n new · d delete · S setup · r refresh · q quit")
 
 	return lipgloss.JoinVertical(lipgloss.Left, header, m.table.View(), status, footer)
 }
