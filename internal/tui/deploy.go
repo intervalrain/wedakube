@@ -48,7 +48,8 @@ func (m DeployScreen) Init() tea.Cmd {
 	go func() {
 		emit := func(e deploy.Event) { m.events <- e }
 		date := time.Now().Format("20060102")
-		_, err := deploy.Deploy(context.Background(), m.ssh, m.store, m.target, date, true, emit)
+		feedPAT := deploy.ResolveFeedPAT(m.store)
+		_, err := deploy.Deploy(context.Background(), m.ssh, m.store, m.target, date, feedPAT, true, emit)
 		m.endCh <- err
 	}()
 	return tea.Batch(waitEvent(m.events), waitEnd(m.endCh))

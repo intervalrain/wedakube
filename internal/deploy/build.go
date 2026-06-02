@@ -10,9 +10,22 @@ import (
 	"github.com/intervalrain/wedakube/internal/config"
 )
 
+// ResolveFeedPAT 取得私有 NuGet restore 用的 PAT：環境變數優先，否則用存檔的 secret。
+func ResolveFeedPAT(store *config.Store) string {
+	if v := os.Getenv("FEED_PAT"); v != "" {
+		return v
+	}
+	if store != nil {
+		if v, err := store.GetSecret("FEED_PAT"); err == nil {
+			return v
+		}
+	}
+	return ""
+}
+
 // BuildAndPush 用 buildx 建 linux/amd64 image 並推到 registry，一步完成。
-// 本地是 arm64、node 是 amd64，所以 --platform 不可省。FEED_PAT 由環境變數帶入私有 NuGet restore。
-func BuildAndPush(ctx context.Context, t config.Target, tag string, emit Emitter) error {
+// 本地是 arm64、node 是 amd64，所以 --platform 不可省。feedPAT 帶入私有 NuGet restore。
+func BuildAndPush(ctx context.Context, t config.Target, tag, feedPAT string, emit Emitter) error {
 	image := t.ImageRepo + ":" + tag
 
 	args := []string{
@@ -22,8 +35,8 @@ func BuildAndPush(ctx context.Context, t config.Target, tag string, emit Emitter
 		"-t", image,
 		"--push",
 	}
-	if pat := os.Getenv("FEED_PAT"); pat != "" {
-		args = append(args, "--build-arg", "FEED_PAT="+pat)
+	if feedPAT != "" {
+		args = append(args, "--build-arg", "FEED_PAT="+feedPAT)
 	}
 	args = append(args, t.Context)
 
