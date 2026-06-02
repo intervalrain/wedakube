@@ -44,7 +44,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if len(a.stack) > 1 {
 			a.stack = a.stack[:len(a.stack)-1]
 		}
-		return a, nil
+		return a, a.top().Init() // 重新喚醒露出的畫面（L2 回來時恢復自動刷新）
 	}
 
 	i := len(a.stack) - 1

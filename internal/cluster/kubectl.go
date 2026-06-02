@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/intervalrain/wedakube/internal/model"
 )
@@ -41,7 +42,8 @@ func ResolveWedaNamespace(ctx context.Context, ssh *SSH) (string, error) {
 type deployList struct {
 	Items []struct {
 		Metadata struct {
-			Name string `json:"name"`
+			Name              string `json:"name"`
+			CreationTimestamp string `json:"creationTimestamp"`
 		} `json:"metadata"`
 		Spec struct {
 			Template struct {
@@ -82,9 +84,35 @@ func (k *Kubectl) Deployments(ctx context.Context) ([]model.Service, error) {
 			Name:     it.Metadata.Name,
 			Ready:    fmt.Sprintf("%d/%d", it.Status.ReadyReplicas, it.Status.Replicas),
 			UpToDate: it.Status.UpdatedReplicas,
+			Age:      humanAge(it.Metadata.CreationTimestamp),
 			Image:    image,
 		})
 	}
 	sort.Slice(svcs, func(i, j int) bool { return svcs[i].Name < svcs[j].Name })
 	return svcs, nil
+}
+
+// Raw 跑一條 kubectl 子指令（已帶 -n <ns>），回傳合併 stdout/stderr 文字。供 L3 唯讀檢視用。
+func (k *Kubectl) Raw(ctx context.Context, args string) (string, error) {
+	out, err := k.ssh.Run(ctx, fmt.Sprintf("kubectl -n %s %s 2>&1", k.ns, args))
+	return string(out), err
+}
+
+// humanAge 把 RFC3339 建立時間轉成 kubectl 風格年齡（34d / 2h / 15m）。
+func humanAge(ts string) string {
+	t, err := time.Parse(time.RFC3339, ts)
+	if err != nil {
+		return "?"
+	}
+	d := time.Since(t)
+	switch {
+	case d < time.Minute:
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	case d < time.Hour:
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%dh", int(d.Hours()))
+	default:
+		return fmt.Sprintf("%dd", int(d.Hours())/24)
+	}
 }

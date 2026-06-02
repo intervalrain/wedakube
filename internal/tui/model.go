@@ -32,6 +32,7 @@ type ServiceList struct {
 	kubectl  *cluster.Kubectl
 	host     string
 	table    table.Model
+	services []model.Service
 	err      error
 	loading  bool
 	lastSync time.Time
@@ -39,10 +40,11 @@ type ServiceList struct {
 
 func NewServiceList(kubectl *cluster.Kubectl, host string) ServiceList {
 	columns := []table.Column{
-		{Title: "NAME", Width: 26},
-		{Title: "READY", Width: 7},
+		{Title: "NAME", Width: 24},
+		{Title: "READY", Width: 6},
 		{Title: "UP-TO-DATE", Width: 11},
-		{Title: "IMAGE", Width: 44},
+		{Title: "AGE", Width: 6},
+		{Title: "IMAGE", Width: 38},
 	}
 	t := table.New(
 		table.WithColumns(columns),
@@ -86,6 +88,11 @@ func (m ServiceList) Update(msg tea.Msg) (screen, tea.Cmd) {
 		case "r":
 			m.loading = true
 			return m, m.fetch()
+		case "enter":
+			i := m.table.Cursor()
+			if i >= 0 && i < len(m.services) {
+				return m, push(NewServiceDetail(m.kubectl, m.host, m.services[i]))
+			}
 		}
 	case servicesMsg:
 		m.loading = false
@@ -107,9 +114,10 @@ func (m ServiceList) Update(msg tea.Msg) (screen, tea.Cmd) {
 }
 
 func (m *ServiceList) setRows(svcs []model.Service) {
+	m.services = svcs
 	rows := make([]table.Row, 0, len(svcs))
 	for _, s := range svcs {
-		rows = append(rows, table.Row{s.Name, s.Ready, strconv.Itoa(s.UpToDate), s.ShortImage()})
+		rows = append(rows, table.Row{s.Name, s.Ready, strconv.Itoa(s.UpToDate), s.Age, s.ShortImage()})
 	}
 	m.table.SetRows(rows)
 }
@@ -128,7 +136,7 @@ func (m ServiceList) View() string {
 			m.kubectl.Namespace(), len(m.table.Rows()), m.lastSync.Format("15:04:05")))
 	}
 
-	footer := footerStyle.Render("↑/↓ navigate · r refresh · esc back · ctrl+c quit")
+	footer := footerStyle.Render("↑/↓ navigate · enter open · r refresh · esc back · ctrl+c quit")
 
 	return lipgloss.JoinVertical(lipgloss.Left, header, m.table.View(), status, footer)
 }
