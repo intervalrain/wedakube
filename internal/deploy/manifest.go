@@ -5,11 +5,12 @@ import (
 	"fmt"
 
 	"github.com/intervalrain/wedakube/internal/cluster"
+	"github.com/intervalrain/wedakube/internal/config"
 )
 
 // Render 產生一份最小 Deployment + Service manifest（給全新服務第一次部署用）。
 // 標 app 與 app.kubernetes.io/name 兩種 label，方便用 -l app=<svc> 選取自己的 pod。
-func Render(t Target, tag string) string {
+func Render(t config.Target, tag string) string {
 	image := t.ImageRepo + ":" + tag
 	return fmt.Sprintf(`apiVersion: apps/v1
 kind: Deployment
@@ -78,7 +79,7 @@ func Apply(ctx context.Context, ssh *cluster.SSH, manifest []byte) error {
 }
 
 // DeploymentExists 判斷該 deployment 是否已存在（決定走 set image 還是首次 apply）。
-func DeploymentExists(ctx context.Context, ssh *cluster.SSH, t Target) bool {
+func DeploymentExists(ctx context.Context, ssh *cluster.SSH, t config.Target) bool {
 	_, err := ssh.Run(ctx, fmt.Sprintf("kubectl -n %s get deploy/%s -o name", t.Namespace, t.Service))
 	return err == nil
 }

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/intervalrain/wedakube/internal/cluster"
+	"github.com/intervalrain/wedakube/internal/config"
 	"github.com/intervalrain/wedakube/internal/deploy"
 )
 
@@ -20,7 +21,7 @@ func runDeploy(args []string) {
 	}
 	repo := args[0]
 
-	store, err := deploy.DefaultStore()
+	store, err := config.DefaultStore()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "store:", err)
 		os.Exit(1)
@@ -35,7 +36,7 @@ func runDeploy(args []string) {
 		os.Exit(1)
 	}
 
-	ssh := cluster.NewSSH(t.SSHAlias)
+	ssh := cluster.NewSSH(resolveHost(store, t))
 	defer ssh.Close()
 
 	emit := func(e deploy.Event) {
@@ -53,4 +54,14 @@ func runDeploy(args []string) {
 		os.Exit(1)
 	}
 	fmt.Println("✓ deployed", t.Service, "=>", tag)
+}
+
+// resolveHost 從 target 取得連線設定：優先用 t.Host 查 store，否則退回 SSHAlias（alias-only）。
+func resolveHost(store *config.Store, t config.Target) config.Host {
+	if t.Host != "" {
+		if h, ok, _ := store.GetHost(t.Host); ok {
+			return h
+		}
+	}
+	return config.Host{Name: t.SSHAlias, Alias: t.SSHAlias, Namespace: t.Namespace}
 }

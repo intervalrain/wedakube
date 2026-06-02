@@ -1,4 +1,3 @@
-
 package cluster
 
 import (
@@ -8,31 +7,50 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
+
+	"github.com/intervalrain/wedakube/internal/config"
 )
 
+// SSH 透過 OpenSSH ControlMaster 複用一條連線，在遠端 node 上跑指令。
 type SSH struct {
-	alias string
-	path  string
+	host config.Host
+	path string
 }
 
-func NewSSH(alias string) *SSH {
+func NewSSH(h config.Host) *SSH {
+	key := h.Name
+	if key == "" {
+		key = h.Dest()
+	}
 	return &SSH{
-		alias: alias,
-		path: filepath.Join(os.TempDir(), "wedakube-cm-" + alias),
+		host: h,
+		path: filepath.Join(os.TempDir(), "wedakube-cm-"+sanitize(key)),
 	}
 }
 
+func sanitize(s string) string {
+	return strings.NewReplacer("/", "_", " ", "_", ":", "_", "@", "_").Replace(s)
+}
+
 func (s *SSH) opts() []string {
-	return []string{
+	o := []string{
 		"-o", "ControlMaster=auto",
 		"-o", "ControlPath=" + s.path,
 		"-o", "ControlPersist=120",
 		"-o", "ConnectTimeout=8",
 	}
+	if s.host.IdentityFile != "" {
+		o = append(o, "-i", s.host.ExpandIdentity())
+	}
+	if s.host.User != "" {
+		o = append(o, "-l", s.host.User)
+	}
+	return o
 }
 
 func (s *SSH) Run(ctx context.Context, remoteCmd string) ([]byte, error) {
-	args := append(s.opts(), s.alias, remoteCmd)
+	args := append(s.opts(), s.host.Dest(), remoteCmd)
 	cmd := exec.CommandContext(ctx, "ssh", args...)
 
 	var stderr bytes.Buffer
@@ -47,7 +65,7 @@ func (s *SSH) Run(ctx context.Context, remoteCmd string) ([]byte, error) {
 
 // RunStdin 跟 Run 一樣，但把 stdin 餵給遠端指令（例如 kubectl apply -f -）。
 func (s *SSH) RunStdin(ctx context.Context, remoteCmd string, stdin []byte) ([]byte, error) {
-	args := append(s.opts(), s.alias, remoteCmd)
+	args := append(s.opts(), s.host.Dest(), remoteCmd)
 	cmd := exec.CommandContext(ctx, "ssh", args...)
 	cmd.Stdin = bytes.NewReader(stdin)
 
@@ -62,6 +80,6 @@ func (s *SSH) RunStdin(ctx context.Context, remoteCmd string, stdin []byte) ([]b
 }
 
 func (s *SSH) Close() error {
-	exec.Command("ssh", "-o", "ControlPath=" + s.path, "-O", "exit", s.alias).Run()
+	exec.Command("ssh", "-o", "ControlPath="+s.path, "-O", "exit", s.host.Dest()).Run()
 	return nil
 }
