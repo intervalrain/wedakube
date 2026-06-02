@@ -1,20 +1,14 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"os"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/intervalrain/wedakube/internal/cluster"
 	"github.com/intervalrain/wedakube/internal/config"
 	"github.com/intervalrain/wedakube/internal/tui"
 )
-
-// defaultHost：尚未做 L1 host list 前的暫時預設連線（alias-only）。
-var defaultHost = config.Host{Name: "my-cluster", Alias: "my-cluster"}
 
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "deploy" {
@@ -25,22 +19,30 @@ func main() {
 }
 
 func runTUI() {
-	ssh := cluster.NewSSH(defaultHost)
-	defer ssh.Close()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	ns, err := cluster.ResolveWedaNamespace(ctx, ssh)
-	cancel()
+	store, err := config.DefaultStore()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "cannot resolve -weda namespace:", err)
+		fmt.Fprintln(os.Stderr, "store:", err)
 		os.Exit(1)
 	}
+	seedDefaultHost(store)
 
-	kc := cluster.NewKubectl(ssh, ns)
-
-	p := tea.NewProgram(tui.New(kc), tea.WithAltScreen())
+	p := tea.NewProgram(tui.NewApp(tui.NewHosts(store)), tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
+}
+
+// seedDefaultHost：首次執行時，若沒有任何 host 就放入 dev cluster 預設值（L1 host form 做好前的便利）。
+func seedDefaultHost(store *config.Store) {
+	hosts, err := store.ListHosts()
+	if err != nil || len(hosts) > 0 {
+		return
+	}
+	store.PutHost(config.Host{
+		Name:         "my-cluster",
+		HostName:     "10.0.0.1",
+		User:         "ubuntu",
+		IdentityFile: "~/.ssh/private.key",
+	})
 }

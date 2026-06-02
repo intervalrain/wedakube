@@ -27,15 +27,17 @@ var (
 	footerStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240")).MarginTop(1)
 )
 
-type Model struct {
+// ServiceList 是 L2：某 host 內的服務列表。
+type ServiceList struct {
 	kubectl  *cluster.Kubectl
+	host     string
 	table    table.Model
 	err      error
 	loading  bool
 	lastSync time.Time
 }
 
-func New(kubectl *cluster.Kubectl) Model {
+func NewServiceList(kubectl *cluster.Kubectl, host string) ServiceList {
 	columns := []table.Column{
 		{Title: "NAME", Width: 26},
 		{Title: "READY", Width: 7},
@@ -52,10 +54,10 @@ func New(kubectl *cluster.Kubectl) Model {
 	st.Selected = st.Selected.Bold(true).Foreground(lipgloss.Color("231")).Background(lipgloss.Color("63"))
 	t.SetStyles(st)
 
-	return Model{kubectl: kubectl, table: t, loading: true}
+	return ServiceList{kubectl: kubectl, host: host, table: t, loading: true}
 }
 
-func (m Model) Init() tea.Cmd {
+func (m ServiceList) Init() tea.Cmd {
 	return tea.Batch(m.fetch(), tick())
 }
 
@@ -63,8 +65,7 @@ func tick() tea.Cmd {
 	return tea.Tick(refreshInterval, func(t time.Time) tea.Msg { return tickMsg(t) })
 }
 
-// fetch 是一個 command：在背景 goroutine 撈 deployments，回傳成 Msg。
-func (m Model) fetch() tea.Cmd {
+func (m ServiceList) fetch() tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
@@ -76,12 +77,12 @@ func (m Model) fetch() tea.Cmd {
 	}
 }
 
-func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m ServiceList) Update(msg tea.Msg) (screen, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "q", "ctrl+c":
-			return m, tea.Quit
+		case "q", "esc":
+			return m, pop()
 		case "r":
 			m.loading = true
 			return m, m.fetch()
@@ -105,7 +106,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m *Model) setRows(svcs []model.Service) {
+func (m *ServiceList) setRows(svcs []model.Service) {
 	rows := make([]table.Row, 0, len(svcs))
 	for _, s := range svcs {
 		rows = append(rows, table.Row{s.Name, s.Ready, strconv.Itoa(s.UpToDate), s.ShortImage()})
@@ -113,8 +114,8 @@ func (m *Model) setRows(svcs []model.Service) {
 	m.table.SetRows(rows)
 }
 
-func (m Model) View() string {
-	header := titleStyle.Render("WEDA k3s console")
+func (m ServiceList) View() string {
+	header := titleStyle.Render(m.host + " · services")
 
 	var status string
 	switch {
@@ -127,7 +128,7 @@ func (m Model) View() string {
 			m.kubectl.Namespace(), len(m.table.Rows()), m.lastSync.Format("15:04:05")))
 	}
 
-	footer := footerStyle.Render("↑/↓ navigate · r refresh · q quit")
+	footer := footerStyle.Render("↑/↓ navigate · r refresh · esc back · ctrl+c quit")
 
 	return lipgloss.JoinVertical(lipgloss.Left, header, m.table.View(), status, footer)
 }
