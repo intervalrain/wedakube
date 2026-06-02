@@ -40,6 +40,6 @@ func TestDeploymentsIntegration(t *testing.T) {
 		t.Fatal("expected at least one deployment")
 	}
 	for _, s := range svcs {
-		t.Logf("%-24s %-6s up=%d  %s", s.Name, s.Ready, s.UpToDate, s.ShortImage())
+		t.Logf("%-24s %-6s up=%d  age=%-5s %s", s.Name, s.Ready, s.UpToDate, s.Age, s.ShortImage())
 	}
 }

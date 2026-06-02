@@ -7,6 +7,7 @@ type Service struct {
 	Name     string
 	Ready    string // "1/1"
 	UpToDate int
+	Age      string // "34d" / "2h" / "15m"
 	Image    string
 }
 
