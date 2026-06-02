@@ -37,9 +37,13 @@ func WaitRollout(ctx context.Context, ssh *cluster.SSH, t config.Target, emit Em
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 
+	lastReady, lastWant := 0, 1
 	for {
 		out, err := ssh.Run(ctx, fmt.Sprintf("kubectl -n %s get deploy/%s -o json", t.Namespace, t.Service))
 		if err != nil {
+			if ctx.Err() != nil {
+				return fmt.Errorf("rollout timed out at ready %d/%d — pod likely Running but not Ready (readiness probe / missing dependency)", lastReady, lastWant)
+			}
 			return err
 		}
 		var ds deployStatus
@@ -51,6 +55,7 @@ func WaitRollout(ctx context.Context, ssh *cluster.SSH, t config.Target, emit Em
 		if want == 0 {
 			want = 1
 		}
+		lastReady, lastWant = ds.Status.ReadyReplicas, want
 		pct := float64(ds.Status.ReadyReplicas) / float64(want)
 		emit(Event{
 			Phase: "rollout",
@@ -67,7 +72,7 @@ func WaitRollout(ctx context.Context, ssh *cluster.SSH, t config.Target, emit Em
 
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("rollout timeout: %w", ctx.Err())
+			return fmt.Errorf("rollout timed out at ready %d/%d — pod likely Running but not Ready (readiness probe / missing dependency)", lastReady, lastWant)
 		case <-ticker.C:
 		}
 	}

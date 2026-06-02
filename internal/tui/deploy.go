@@ -24,11 +24,12 @@ type DeployScreen struct {
 	store  *config.Store
 	events chan deploy.Event
 	endCh  chan error
-	bar    progress.Model
-	lines  []string
-	phase  string
-	done   bool
-	err    error
+	bar       progress.Model
+	lines     []string
+	failDetail string
+	phase     string
+	done      bool
+	err       error
 }
 
 func NewDeployScreen(ssh *cluster.SSH, store *config.Store, t config.Target) DeployScreen {
@@ -70,8 +71,12 @@ func (m DeployScreen) Update(msg tea.Msg) (screen, tea.Cmd) {
 		}
 	case deploy.Event:
 		m.phase = msg.Phase
-		line := "[" + msg.Phase + "] " + firstLine(msg.Msg)
-		m.lines = append(m.lines, line)
+		if msg.Phase == "fail" {
+			m.failDetail = msg.Msg // 完整 describe + logs，View 會顯示
+			m.lines = append(m.lines, "[fail] captured pod diagnostics ↓")
+		} else {
+			m.lines = append(m.lines, "["+msg.Phase+"] "+firstLine(msg.Msg))
+		}
 		if len(m.lines) > 14 {
 			m.lines = m.lines[len(m.lines)-14:]
 		}
@@ -114,6 +119,10 @@ func (m DeployScreen) View() string {
 
 	log := dimStyle.Render(strings.Join(m.lines, "\n"))
 
+	if m.err != nil && m.failDetail != "" {
+		log = log + "\n\n" + dimStyle.Render(tailLines(m.failDetail, 18))
+	}
+
 	hint := ""
 	if m.done {
 		hint = dimStyle.Render("esc back · ctrl+c quit")
@@ -131,6 +140,15 @@ func firstLine(s string) string {
 		return s[:i]
 	}
 	return s
+}
+
+// tailLines 回傳字串最後 n 行（失敗診斷太長時只秀尾巴）。
+func tailLines(s string, n int) string {
+	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	return strings.Join(lines, "\n")
 }
 
 func hostOf(t config.Target) string {

@@ -97,6 +97,8 @@ func (m ServiceList) Update(msg tea.Msg) (screen, tea.Cmd) {
 		case "r":
 			m.loading = true
 			return m, m.fetch()
+		case "a":
+			return m, push(NewWizard(m.store, m.kubectl.SSH(), m.host))
 		case "enter":
 			i := m.table.Cursor()
 			if i >= 0 && i < len(m.services) {
@@ -169,7 +171,7 @@ func (m ServiceList) View() string {
 			m.kubectl.Namespace(), len(m.table.Rows()), m.lastSync.Format("15:04:05")))
 	}
 
-	footer := footerStyle.Render("↑/↓ navigate · enter open · r refresh · esc back · ctrl+c quit")
+	footer := footerStyle.Render("↑/↓ · enter open · a new deploy · r refresh · esc back · ctrl+c quit")
 
 	return lipgloss.JoinVertical(lipgloss.Left, header, m.table.View(), status, footer)
 }
