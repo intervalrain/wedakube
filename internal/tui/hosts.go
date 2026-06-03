@@ -15,6 +15,7 @@ import (
 type connectedMsg struct {
 	kc   *cluster.Kubectl
 	host string
+	helm config.HelmParams // 第一次連線時自動偵測，由 HostsScreen 存回 Host
 }
 
 // HostsScreen 是 L1：工具管理的主機清單。
@@ -78,7 +79,7 @@ func (m HostsScreen) selected() (config.Host, bool) {
 func (m HostsScreen) connectCmd(h config.Host) tea.Cmd {
 	return func() tea.Msg {
 		ssh := cluster.NewSSH(h)
-		ns := h.Namespace
+		ns := h.DerivedNamespace()
 		if ns == "" {
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
@@ -88,7 +89,18 @@ func (m HostsScreen) connectCmd(h config.Host) tea.Cmd {
 			}
 			ns = resolved
 		}
-		return connectedMsg{kc: cluster.NewKubectl(ssh, ns), host: h.Name}
+		kc := cluster.NewKubectl(ssh, ns)
+
+		// 第一次連線：自動偵測 helm 參數（tenant/srp/eco/registry…）
+		helm := h.Helm
+		if helm.TenantID == "" {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			if p, err := kc.SampleHelmParams(ctx); err == nil {
+				helm = p
+			}
+		}
+		return connectedMsg{kc: kc, host: h.Name, helm: helm}
 	}
 }
 
@@ -116,6 +128,12 @@ func (m HostsScreen) Update(msg tea.Msg) (screen, tea.Cmd) {
 		}
 	case connectedMsg:
 		m.connect = ""
+		// 自動偵測到新的 helm 參數就持久化
+		if h, ok, _ := m.store.GetHost(msg.host); ok && h.Helm.TenantID == "" && msg.helm.TenantID != "" {
+			h.Helm = msg.helm
+			m.store.PutHost(h)
+			m = m.reload()
+		}
 		return m, push(NewServiceList(msg.kc, msg.host, m.store))
 	case errMsg:
 		m.connect = ""
