@@ -30,15 +30,16 @@ var (
 
 // ServiceList 是 L2：某 host 內的服務列表。
 type ServiceList struct {
-	kubectl  *cluster.Kubectl
-	host     string
-	store    *config.Store
-	targets  map[string]config.Target // service name -> 部署目標
-	table    table.Model
-	services []model.Service
-	err      error
-	loading  bool
-	lastSync time.Time
+	kubectl    *cluster.Kubectl
+	host       string
+	store      *config.Store
+	targets    map[string]config.Target // service name -> 部署目標
+	table      table.Model
+	services   []model.Service // 顯示列（含 synthetic）
+	discovered []model.Service // 上次 fetch 的真實 cluster 服務
+	err        error
+	loading    bool
+	lastSync   time.Time
 }
 
 func NewServiceList(kubectl *cluster.Kubectl, host string, store *config.Store) ServiceList {
@@ -99,6 +100,17 @@ func (m ServiceList) Update(msg tea.Msg) (screen, tea.Cmd) {
 			return m, m.fetch()
 		case "a":
 			return m, push(NewWizard(m.store, m.kubectl.SSH(), m.host))
+		case "d":
+			i := m.table.Cursor()
+			if i >= 0 && i < len(m.services) {
+				name := m.services[i].Name
+				if t, ok := m.targets[name]; ok {
+					_ = m.store.DeleteTarget(t.RepoPath)
+					delete(m.targets, name)
+					m.setRows(m.discovered)
+				}
+			}
+			return m, nil
 		case "enter":
 			i := m.table.Cursor()
 			if i >= 0 && i < len(m.services) {
@@ -130,6 +142,7 @@ func (m ServiceList) Update(msg tea.Msg) (screen, tea.Cmd) {
 }
 
 func (m *ServiceList) setRows(discovered []model.Service) {
+	m.discovered = discovered
 	seen := map[string]bool{}
 	merged := make([]model.Service, 0, len(discovered)+len(m.targets))
 	for _, s := range discovered {
@@ -171,7 +184,7 @@ func (m ServiceList) View() string {
 			m.kubectl.Namespace(), len(m.table.Rows()), m.lastSync.Format("15:04:05")))
 	}
 
-	footer := footerStyle.Render("↑/↓ · enter open · a new deploy · r refresh · esc back · ctrl+c quit")
+	footer := footerStyle.Render("↑/↓ · enter open · a new deploy · d unpin · r refresh · esc back · ctrl+c quit")
 
 	return lipgloss.JoinVertical(lipgloss.Left, header, m.table.View(), status, footer)
 }
