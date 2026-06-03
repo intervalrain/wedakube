@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/table"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -17,6 +18,13 @@ import (
 
 type wizField struct{ key, label, hint, value string }
 
+// dirEntry 是 repo 瀏覽器的一筆。
+type dirEntry struct {
+	name        string
+	isParent    bool // ".."
+	isCandidate bool // 子資料夾內含 appcfg.yaml 或 Dockerfile
+}
+
 // WizardScreen 引導使用者一步步建立一個部署目標（新服務），最後存檔並可直接部署。
 type WizardScreen struct {
 	store  *config.Store
@@ -25,6 +33,11 @@ type WizardScreen struct {
 	fields []wizField
 	idx    int // 0..len(fields)；== len(fields) 為 review 步驟
 	input  textinput.Model
+
+	// step 0：目錄瀏覽器（不再用文字輸入）
+	cwd     string
+	browser table.Model
+	entries []dirEntry
 }
 
 func NewWizard(store *config.Store, ssh *cluster.SSH, host string) WizardScreen {
@@ -47,9 +60,92 @@ func NewWizard(store *config.Store, ssh *cluster.SSH, host string) WizardScreen 
 	ti.Width = 54
 	ti.Focus()
 
-	w := WizardScreen{store: store, ssh: ssh, host: host, fields: fields, input: ti}
+	// 目錄瀏覽器（給 step 0 用）
+	b := table.New(
+		table.WithColumns([]table.Column{
+			{Title: "", Width: 3},
+			{Title: "DIRECTORY", Width: 64},
+		}),
+		table.WithFocused(true),
+		table.WithHeight(14),
+	)
+	bs := table.DefaultStyles()
+	bs.Header = bs.Header.Bold(true).BorderBottom(true).BorderForeground(lipgloss.Color("240"))
+	bs.Selected = bs.Selected.Bold(true).Foreground(lipgloss.Color("231")).Background(lipgloss.Color("63"))
+	b.SetStyles(bs)
+
+	w := WizardScreen{
+		store: store, ssh: ssh, host: host,
+		fields: fields, input: ti,
+		cwd: pickStartDir(), browser: b,
+	}
+	w.reloadBrowser()
 	w.syncInput()
 	return w
+}
+
+// pickStartDir 智慧地挑一個 wizard 啟動時的起點。
+func pickStartDir() string {
+	home, _ := os.UserHomeDir()
+	for _, p := range []string{
+		filepath.Join(home, "advantech", "projects"),
+		filepath.Join(home, "advantech"),
+		filepath.Join(home, "projects"),
+		home,
+	} {
+		if st, err := os.Stat(p); err == nil && st.IsDir() {
+			return p
+		}
+	}
+	return "."
+}
+
+// loadEntries 讀某個目錄下的子資料夾，並標出哪些是「可部署候選」（含 appcfg.yaml 或 Dockerfile）。
+func loadEntries(cwd string) []dirEntry {
+	es := []dirEntry{{name: "..", isParent: true}}
+	items, err := os.ReadDir(cwd)
+	if err != nil {
+		return es
+	}
+	for _, it := range items {
+		if !it.IsDir() {
+			continue
+		}
+		n := it.Name()
+		if strings.HasPrefix(n, ".") {
+			continue
+		}
+		cand := false
+		if _, err := os.Stat(filepath.Join(cwd, n, "appcfg.yaml")); err == nil {
+			cand = true
+		}
+		if !cand {
+			if _, err := os.Stat(filepath.Join(cwd, n, "Dockerfile")); err == nil {
+				cand = true
+			}
+		}
+		es = append(es, dirEntry{name: n, isCandidate: cand})
+	}
+	return es
+}
+
+func (m *WizardScreen) reloadBrowser() {
+	m.entries = loadEntries(m.cwd)
+	rows := make([]table.Row, 0, len(m.entries))
+	for _, e := range m.entries {
+		mark := ""
+		name := e.name
+		switch {
+		case e.isParent:
+			mark = "↑"
+			name = ".. (parent)"
+		case e.isCandidate:
+			mark = "◆"
+		}
+		rows = append(rows, table.Row{mark, name})
+	}
+	m.browser.SetRows(rows)
+	m.browser.SetCursor(0)
 }
 
 func (m WizardScreen) Init() tea.Cmd { return textinput.Blink }
@@ -163,6 +259,41 @@ func versionBase(v string) string {
 }
 
 func (m WizardScreen) Update(msg tea.Msg) (screen, tea.Cmd) {
+	// step 0：repo 目錄瀏覽器
+	if m.idx == 0 {
+		if k, ok := msg.(tea.KeyMsg); ok {
+			switch k.String() {
+			case "esc":
+				return m, pop()
+			case "enter":
+				i := m.browser.Cursor()
+				if i < 0 || i >= len(m.entries) {
+					return m, nil
+				}
+				e := m.entries[i]
+				if e.isParent {
+					m.cwd = filepath.Dir(m.cwd)
+					m.reloadBrowser()
+					return m, nil
+				}
+				target := filepath.Join(m.cwd, e.name)
+				if e.isCandidate {
+					m.fields[0].value = target
+					m.detect(target)
+					m.idx++
+					m.syncInput()
+					return m, nil
+				}
+				m.cwd = target
+				m.reloadBrowser()
+				return m, nil
+			}
+		}
+		var cmd tea.Cmd
+		m.browser, cmd = m.browser.Update(msg)
+		return m, cmd
+	}
+
 	k, ok := msg.(tea.KeyMsg)
 	if !ok {
 		return m, nil
@@ -241,6 +372,14 @@ func (m WizardScreen) View() string {
 
 	header := titleStyle.Render("wizard · new deployment") +
 		dimStyle.Render("   step "+strconv.Itoa(m.idx+1)+"/"+strconv.Itoa(len(m.fields)))
+
+	// step 0：目錄瀏覽器
+	if m.idx == 0 {
+		bread := dimStyle.Render(m.cwd)
+		hint := dimStyle.Render("◆ has appcfg.yaml / Dockerfile · enter on ◆ = select · enter on dir = open · esc cancel")
+		return lipgloss.JoinVertical(lipgloss.Left, header, "", bread, m.browser.View(), "", hint)
+	}
+
 	cur := m.fields[m.idx]
 	field := valStyle.Render(cur.label) + "\n" + m.input.View() + "\n" + dimStyle.Render("  "+cur.hint)
 
