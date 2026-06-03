@@ -162,6 +162,31 @@ func (k *Kubectl) SampleHelmParams(ctx context.Context) (config.HelmParams, erro
 	return hp, fmt.Errorf("no sample deployment with ECO_API_KEY in ns %s", k.ns)
 }
 
+// HelmReleaseFor 從 deployment annotation 偵測它是哪個 helm release 裝的。
+// 空字串 = 不是 helm 管的（不該 uninstall）。
+func (k *Kubectl) HelmReleaseFor(ctx context.Context, service string) (release, namespace string, err error) {
+	out, err := k.ssh.Run(ctx, fmt.Sprintf("kubectl -n %s get deploy/%s -o json", k.ns, service))
+	if err != nil {
+		return "", "", err
+	}
+	var d struct {
+		Metadata struct {
+			Annotations map[string]string `json:"annotations"`
+		} `json:"metadata"`
+	}
+	if err := json.Unmarshal(out, &d); err != nil {
+		return "", "", err
+	}
+	return d.Metadata.Annotations["meta.helm.sh/release-name"],
+		d.Metadata.Annotations["meta.helm.sh/release-namespace"], nil
+}
+
+// HelmUninstall 在 node 上跑 helm uninstall。Application CRD 因為 resource-policy:keep 會留下。
+func (k *Kubectl) HelmUninstall(ctx context.Context, release, namespace string) (string, error) {
+	out, err := k.ssh.Run(ctx, fmt.Sprintf("helm uninstall %s -n %s 2>&1", release, namespace))
+	return string(out), err
+}
+
 // Raw 跑一條 kubectl 子指令（已帶 -n <ns>），回傳合併 stdout/stderr 文字。供 L3 唯讀檢視用。
 func (k *Kubectl) Raw(ctx context.Context, args string) (string, error) {
 	out, err := k.ssh.Run(ctx, fmt.Sprintf("kubectl -n %s %s 2>&1", k.ns, args))
