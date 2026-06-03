@@ -50,6 +50,35 @@ func TestParseAppcfg(t *testing.T) {
 	}
 }
 
+func TestLoadEntriesCandidate(t *testing.T) {
+	root := t.TempDir()
+	mk := func(p string) { os.MkdirAll(filepath.Join(root, p), 0o755) }
+	touch := func(p string) { os.WriteFile(filepath.Join(root, p), []byte(""), 0o600) }
+
+	mk("with-appcfg")
+	touch("with-appcfg/appcfg.yaml")
+	mk("with-dockerfile")
+	touch("with-dockerfile/Dockerfile")
+	mk("plain")
+	mk(".hidden") // 應被略過
+
+	got := map[string]bool{}
+	for _, e := range loadEntries(root) {
+		if e.isParent {
+			continue
+		}
+		got[e.name] = e.isCandidate
+	}
+
+	if want := map[string]bool{
+		"with-appcfg":     true,
+		"with-dockerfile": true,
+		"plain":           false,
+	}; len(got) != len(want) || got["with-appcfg"] != true || got["with-dockerfile"] != true || got["plain"] != false {
+		t.Errorf("entries = %v, want %v", got, want)
+	}
+}
+
 func TestDetectPort(t *testing.T) {
 	dotnet := "FROM x\nENV ASPNETCORE_HTTP_PORTS=5001\nEXPOSE 5001\n"
 	if got := detectPort(dotnet, 8080); got != 5001 {
