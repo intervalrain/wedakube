@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/intervalrain/wedakube/internal/config"
 	"github.com/intervalrain/wedakube/internal/model"
 )
 
@@ -93,6 +94,72 @@ func (k *Kubectl) Deployments(ctx context.Context) ([]model.Service, error) {
 	}
 	sort.Slice(svcs, func(i, j int) bool { return svcs[i].Name < svcs[j].Name })
 	return svcs, nil
+}
+
+// SampleHelmParams 從現役服務的 env / image 推導 cluster 級 helm 參數。
+// 第一次連 host 時呼叫一次就好，省下手填 9 個 --set。
+func (k *Kubectl) SampleHelmParams(ctx context.Context) (config.HelmParams, error) {
+	var hp config.HelmParams
+	out, err := k.ssh.Run(ctx, fmt.Sprintf("kubectl -n %s get deploy -o json", k.ns))
+	if err != nil {
+		return hp, err
+	}
+	var list struct {
+		Items []struct {
+			Spec struct {
+				Template struct {
+					Spec struct {
+						Containers []struct {
+							Image string `json:"image"`
+							Env   []struct {
+								Name  string `json:"name"`
+								Value string `json:"value"`
+							} `json:"env"`
+						} `json:"containers"`
+					} `json:"spec"`
+				} `json:"template"`
+			} `json:"spec"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(out, &list); err != nil {
+		return hp, fmt.Errorf("parse deploy json: %w", err)
+	}
+
+	for _, it := range list.Items {
+		if len(it.Spec.Template.Spec.Containers) == 0 {
+			continue
+		}
+		c := it.Spec.Template.Spec.Containers[0]
+
+		got := map[string]string{}
+		for _, e := range c.Env {
+			got[e.Name] = e.Value
+		}
+		// 認得出來才採用（避免拿到 db-migrator 之類沒 ECO 的 deploy）
+		if got["ECO_API_KEY"] == "" {
+			continue
+		}
+
+		hp.TenantID = got["TENANT_ID"]
+		hp.TenantPath = got["TENANT_NAME"]
+		hp.TenantAlias = got["TENANT_ALIAS"]
+		hp.SrpName = got["SRP_NAME"]
+		hp.Domain = got["DOMAIN"]
+		hp.EcoEndpoint = got["ECO_API_ENDPOINT"]
+		hp.EcoApiKey = got["ECO_API_KEY"]
+
+		// image 形如 harbor.../edge-coa/<svc>:<tag> -> 拆 registry / project
+		if i1 := strings.Index(c.Image, "/"); i1 > 0 {
+			hp.Registry = c.Image[:i1]
+			if rest := c.Image[i1+1:]; len(rest) > 0 {
+				if i2 := strings.Index(rest, "/"); i2 > 0 {
+					hp.Project = rest[:i2]
+				}
+			}
+		}
+		return hp, nil
+	}
+	return hp, fmt.Errorf("no sample deployment with ECO_API_KEY in ns %s", k.ns)
 }
 
 // Raw 跑一條 kubectl 子指令（已帶 -n <ns>），回傳合併 stdout/stderr 文字。供 L3 唯讀檢視用。

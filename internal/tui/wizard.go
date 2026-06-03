@@ -28,14 +28,19 @@ type WizardScreen struct {
 }
 
 func NewWizard(store *config.Store, ssh *cluster.SSH, host string) WizardScreen {
+	// 預設 namespace = host 推導出的 SRP namespace（無則留空，待 detect/手填）
+	defaultNS := ""
+	if h, ok, _ := store.GetHost(host); ok {
+		defaultNS = h.DerivedNamespace()
+	}
 	fields := []wizField{
 		{key: "repo", label: "Repo path", hint: "~/path/to/your/service"},
 		{key: "service", label: "Service name", hint: "k8s deployment name"},
 		{key: "image", label: "Image repo", hint: "registry/project/name"},
-		{key: "ns", label: "Namespace", hint: "wedakube-dev", value: "wedakube-dev"},
+		{key: "ns", label: "Namespace", hint: "(host's SRP ns)", value: defaultNS},
 		{key: "docker", label: "Dockerfile", hint: "<repo>/Dockerfile"},
 		{key: "port", label: "Container port", hint: "5001"},
-		{key: "version", label: "Version base", hint: "v0.1.0", value: "v0.1.0"},
+		{key: "version", label: "Version base", hint: "v1.1.0"},
 	}
 	ti := textinput.New()
 	ti.CharLimit = 200
@@ -75,14 +80,23 @@ func (m *WizardScreen) set(key, val string) {
 	}
 }
 
-// detect 在輸入完 repo 後，自動填 service / dockerfile / port / image 的預設值。
+// detect 在輸入完 repo 後，從 appcfg.yaml + Host.Helm 推 service/image/version/port 的預設值。
 func (m *WizardScreen) detect(repo string) {
 	repo = expandHome(repo)
-	base := filepath.Base(strings.TrimRight(repo, "/"))
-	svc := sanitizeName(base)
+
+	// 1) 從 repo/appcfg.yaml 抓 name / version（WEDA 標準）
+	cfgName, cfgVersion := parseAppcfg(repo)
+
+	// 2) service 名：appcfg.name 優先，否則用 repo 資料夾名
+	svc := cfgName
+	if svc == "" {
+		svc = sanitizeName(filepath.Base(strings.TrimRight(repo, "/")))
+	}
 	if m.get("service") == "" {
 		m.set("service", svc)
 	}
+
+	// 3) Dockerfile 與 port
 	df := filepath.Join(repo, "Dockerfile")
 	port := 8080
 	if b, err := os.ReadFile(df); err == nil {
@@ -94,9 +108,58 @@ func (m *WizardScreen) detect(repo string) {
 	if m.get("port") == "" {
 		m.set("port", strconv.Itoa(port))
 	}
+
+	// 4) image repo：用 host 的 registry/project（自動偵測過）+ service 原名（不轉底線）
 	if m.get("image") == "" {
-		m.set("image", "registry.example.com/edge-coa/"+strings.ReplaceAll(svc, "-", "_"))
+		registry, project := "registry.example.com", "edge-coa"
+		if h, ok, _ := m.store.GetHost(m.host); ok {
+			if h.Helm.Registry != "" {
+				registry = h.Helm.Registry
+			}
+			if h.Helm.Project != "" {
+				project = h.Helm.Project
+			}
+		}
+		m.set("image", registry+"/"+project+"/"+svc)
 	}
+
+	// 5) version base：用 appcfg.version 的 base 段（去掉 _date.N 後綴）
+	if m.get("version") == "" {
+		if vb := versionBase(cfgVersion); vb != "" {
+			m.set("version", vb)
+		} else {
+			m.set("version", "v0.1.0")
+		}
+	}
+}
+
+// parseAppcfg 從 repo 根的 appcfg.yaml 抓 name / version（用簡單行掃描，免拉 yaml dep）。
+func parseAppcfg(repo string) (name, version string) {
+	b, err := os.ReadFile(filepath.Join(repo, "appcfg.yaml"))
+	if err != nil {
+		return "", ""
+	}
+	for _, line := range strings.Split(string(b), "\n") {
+		s := strings.TrimSpace(line)
+		if rest, ok := strings.CutPrefix(s, "name:"); ok && name == "" {
+			name = strings.Trim(strings.TrimSpace(rest), `"'`)
+		} else if rest, ok := strings.CutPrefix(s, "version:"); ok && version == "" {
+			version = strings.Trim(strings.TrimSpace(rest), `"'`)
+		}
+	}
+	return
+}
+
+// versionBase 把 "v0.2.0_20260121.1" 截成 "v0.2.0"，"v1.1.0" 不變。
+func versionBase(v string) string {
+	if i := strings.IndexAny(v, "_-+"); i > 0 {
+		// 保留前綴 v 與 semver 主幹
+		base := v[:i]
+		if strings.HasPrefix(base, "v") {
+			return base
+		}
+	}
+	return v
 }
 
 func (m WizardScreen) Update(msg tea.Msg) (screen, tea.Cmd) {
