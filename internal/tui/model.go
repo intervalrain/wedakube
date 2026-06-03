@@ -126,6 +126,14 @@ func (m ServiceList) Update(msg tea.Msg) (screen, tea.Cmd) {
 		m.loading = false
 		m.err = nil
 		m.lastSync = time.Now()
+		// reload targets：wizard 新增 / d unpin 之後 L2 才會立刻反映
+		if ts, err := m.store.TargetsForHost(m.host); err == nil {
+			fresh := make(map[string]config.Target, len(ts))
+			for _, t := range ts {
+				fresh[t.Service] = t
+			}
+			m.targets = fresh
+		}
 		m.setRows(msg)
 		return m, nil
 	case errMsg:
