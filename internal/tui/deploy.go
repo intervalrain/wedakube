@@ -50,7 +50,13 @@ func (m DeployScreen) Init() tea.Cmd {
 		emit := func(e deploy.Event) { m.events <- e }
 		date := time.Now().Format("20060102")
 		feedPAT := deploy.ResolveFeedPAT(m.store)
-		_, err := deploy.Deploy(context.Background(), m.ssh, m.store, m.target, date, feedPAT, true, emit)
+		var hp config.HelmParams
+		if h, ok, _ := m.store.GetHost(m.target.Host); ok {
+			hp = h.Helm
+		} else if h, ok, _ := m.store.GetHost(m.target.SSHAlias); ok {
+			hp = h.Helm
+		}
+		_, err := deploy.Deploy(context.Background(), m.ssh, m.store, m.target, hp, date, feedPAT, true, emit)
 		m.endCh <- err
 	}()
 	return tea.Batch(waitEvent(m.events), waitEnd(m.endCh))

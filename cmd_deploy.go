@@ -49,7 +49,13 @@ func runDeploy(args []string) {
 
 	date := time.Now().Format("20060102")
 	feedPAT := deploy.ResolveFeedPAT(store)
-	tag, err := deploy.Deploy(context.Background(), ssh, store, t, date, feedPAT, true, emit)
+	var hp config.HelmParams
+	if h, ok, _ := store.GetHost(t.Host); ok {
+		hp = h.Helm
+	} else if h, ok, _ := store.GetHost(t.SSHAlias); ok {
+		hp = h.Helm
+	}
+	tag, err := deploy.Deploy(context.Background(), ssh, store, t, hp, date, feedPAT, true, emit)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "deploy failed:", err)
 		os.Exit(1)
