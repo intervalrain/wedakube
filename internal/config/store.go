@@ -173,6 +173,15 @@ func (s *Store) TargetsForHost(host string) ([]Target, error) {
 	return out, nil
 }
 
+func (s *Store) DeleteTarget(repoPath string) error {
+	st, err := s.load()
+	if err != nil {
+		return err
+	}
+	delete(st.Targets, repoPath)
+	return s.save(st)
+}
+
 func (s *Store) PutTarget(t Target) error {
 	st, err := s.load()
 	if err != nil {
