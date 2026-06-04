@@ -32,13 +32,15 @@ type Host struct {
 	Helm         HelmParams `json:"helm,omitempty"`         // 部署/註冊用的 cluster 參數
 }
 
-// DerivedNamespace 優先用 Helm.TenantID + Helm.SrpName 推導 SRP namespace（WEDA 慣例）。
-// 若沒有就回傳 Host.Namespace（呼叫端再 fallback 到自動解析）。
+// DerivedNamespace 解析順序：使用者明設 > helm 自動推導 (<tenantId>-<srpName>) > "" (呼叫端再 fallback 到自動解析)
 func (h Host) DerivedNamespace() string {
+	if h.Namespace != "" {
+		return h.Namespace
+	}
 	if h.Helm.TenantID != "" && h.Helm.SrpName != "" {
 		return h.Helm.TenantID + "-" + h.Helm.SrpName
 	}
-	return h.Namespace
+	return ""
 }
 
 // Dest 是 ssh 的目的地（HostName 優先，否則 Alias，否則 Name）。
