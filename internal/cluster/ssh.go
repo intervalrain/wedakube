@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -105,6 +106,25 @@ func (s *SSH) RunStdin(ctx context.Context, remoteCmd string, stdin []byte) ([]b
 		return out, fmt.Errorf("ssh %q: %w: %s", remoteCmd, err, stderr.String())
 	}
 	return out, nil
+}
+
+// Stream 跑一條會持續輸出的遠端指令（例如 kubectl logs -f）。
+// 回傳的 reader 串接 stdout+stderr；呼叫端 ctx cancel 就會把 ssh 子程序殺掉。
+func (s *SSH) Stream(ctx context.Context, remoteCmd string) (io.Reader, error) {
+	args := append(s.opts(), s.host.Dest(), remoteCmd)
+	cmd := exec.CommandContext(ctx, "ssh", args...)
+	pr, pw := io.Pipe()
+	cmd.Stdout = pw
+	cmd.Stderr = pw
+	if err := cmd.Start(); err != nil {
+		pw.Close()
+		return nil, err
+	}
+	go func() {
+		_ = cmd.Wait()
+		pw.Close()
+	}()
+	return pr, nil
 }
 
 func (s *SSH) Close() error {

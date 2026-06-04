@@ -84,7 +84,7 @@ func (m ServiceDetail) Update(msg tea.Msg) (screen, tea.Cmd) {
 	case "i":
 		return m, push(NewTextScreen(m.kubectl, "info · "+name, "describe deploy "+name))
 	case "l":
-		return m, push(NewTextScreen(m.kubectl, "logs · "+name, "logs deploy/"+name+" --tail=300"))
+		return m, push(NewLogsScreen(m.kubectl.SSH(), m.kubectl.Namespace(), name))
 	case "u":
 		return m, push(NewTextScreen(m.kubectl, "resource · "+name, "top pod -l "+sel))
 	case "k":
