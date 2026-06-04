@@ -95,6 +95,13 @@ func (m ServiceList) fetch() tea.Cmd {
 
 func (m ServiceList) Update(msg tea.Msg) (screen, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		h := msg.Height - 6
+		if h < 5 {
+			h = 5
+		}
+		m.table.SetHeight(h)
+		return m, nil
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "q", "esc":

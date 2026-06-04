@@ -106,6 +106,14 @@ func (m HostsScreen) connectCmd(h config.Host) tea.Cmd {
 
 func (m HostsScreen) Update(msg tea.Msg) (screen, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		// 留 6 行給 header / status / footer / 邊框
+		h := msg.Height - 6
+		if h < 5 {
+			h = 5
+		}
+		m.table.SetHeight(h)
+		return m, nil
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "q":
