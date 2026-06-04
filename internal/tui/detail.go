@@ -3,6 +3,9 @@ package tui
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -35,6 +38,26 @@ var protectedNamespaces = map[string]bool{
 }
 
 func isProtectedNS(ns string) bool { return protectedNamespaces[ns] }
+
+// deployPrereqsMissing 回傳 target 部署前缺哪些檔（K3S 部署 procedure 的硬性前置）。
+// 兩個都到 = D 才會亮。
+func deployPrereqsMissing(t *config.Target) []string {
+	if t == nil {
+		return nil
+	}
+	var missing []string
+	df := t.Dockerfile
+	if df == "" {
+		df = filepath.Join(t.Context, "Dockerfile")
+	}
+	if _, err := os.Stat(df); err != nil {
+		missing = append(missing, "Dockerfile")
+	}
+	if _, err := os.Stat(filepath.Join(t.Context, "appcfg.yaml")); err != nil {
+		missing = append(missing, "appcfg.yaml")
+	}
+	return missing
+}
 
 // ServiceDetail 是 L3：選定一個服務後的摘要 + 動作選單。
 type ServiceDetail struct {
@@ -165,9 +188,13 @@ func (m ServiceDetail) Update(msg tea.Msg) (screen, tea.Cmd) {
 	case "k":
 		return m, push(NewTextScreen(m.kubectl, "networking", "get svc"))
 	case "D":
-		if m.target != nil {
-			return m, push(NewDeployScreen(m.kubectl.SSH(), m.store, *m.target))
+		if m.target == nil || isProtectedNS(m.kubectl.Namespace()) {
+			return m, nil
 		}
+		if len(deployPrereqsMissing(m.target)) > 0 {
+			return m, nil // 缺檔，灰著按不動
+		}
+		return m, push(NewDeployScreen(m.kubectl.SSH(), m.store, *m.target))
 	}
 	return m, nil
 }
@@ -198,7 +225,8 @@ func (m ServiceDetail) View() string {
 		return dimStyle.Render("  " + key + " " + label)
 	}
 
-	canDeploy := !protected && m.target != nil
+	missingPrereqs := deployPrereqsMissing(m.target)
+	canDeploy := !protected && m.target != nil && len(missingPrereqs) == 0
 	canWrite := !protected
 	deployStr := keyOrDim(canDeploy, "D", "deploy")
 	restartStr := keyOrDim(canWrite, "R", "restart")
@@ -223,6 +251,8 @@ func (m ServiceDetail) View() string {
 		hint = "  ⚠ protected namespace — writes disabled"
 	case m.target == nil:
 		hint = "  no pin/repo — add one in L2 to enable D deploy"
+	case len(missingPrereqs) > 0:
+		hint = "  ⚠ repo missing: " + strings.Join(missingPrereqs, ", ") + " — add them to enable D"
 	}
 	lifecycle := groupStyle.Render("LIFECYCLE") + dimStyle.Render(hint) + "\n" + deployLine + uninstallLine
 	debug := groupStyle.Render("DEBUG") + dimStyle.Render("  ssh tunnel to your local browser") + "\n" +
