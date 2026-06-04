@@ -243,6 +243,30 @@ func (k *Kubectl) HelmUninstall(ctx context.Context, release, namespace string) 
 	return string(out), err
 }
 
+// HelmRollback 退一個 release 到上一個 revision。
+func (k *Kubectl) HelmRollback(ctx context.Context, release, namespace string) (string, error) {
+	out, err := k.ssh.Run(ctx, fmt.Sprintf("helm rollback %s -n %s 2>&1", release, namespace))
+	return string(out), err
+}
+
+// RolloutRestart 觸發 rolling restart（README §6.1）。
+func (k *Kubectl) RolloutRestart(ctx context.Context, service string) (string, error) {
+	out, err := k.ssh.Run(ctx, fmt.Sprintf("kubectl -n %s rollout restart deploy/%s 2>&1", k.ns, service))
+	return string(out), err
+}
+
+// Scale 設定 deployment 的副本數（0 = stop, 1 = start）。
+func (k *Kubectl) Scale(ctx context.Context, service string, replicas int) (string, error) {
+	out, err := k.ssh.Run(ctx, fmt.Sprintf("kubectl -n %s scale deploy/%s --replicas=%d 2>&1", k.ns, service, replicas))
+	return string(out), err
+}
+
+// RolloutUndo 退回 deployment 上一個 revision（非 helm-managed 用）。
+func (k *Kubectl) RolloutUndo(ctx context.Context, service string) (string, error) {
+	out, err := k.ssh.Run(ctx, fmt.Sprintf("kubectl -n %s rollout undo deploy/%s 2>&1", k.ns, service))
+	return string(out), err
+}
+
 // Raw 跑一條 kubectl 子指令（已帶 -n <ns>），回傳合併 stdout/stderr 文字。供 L3 唯讀檢視用。
 func (k *Kubectl) Raw(ctx context.Context, args string) (string, error) {
 	out, err := k.ssh.Run(ctx, fmt.Sprintf("kubectl -n %s %s 2>&1", k.ns, args))
