@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -163,6 +164,21 @@ func (k *Kubectl) SampleHelmParams(ctx context.Context) (config.HelmParams, erro
 		return hp, nil
 	}
 	return hp, fmt.Errorf("no sample deployment with ECO_API_KEY in ns %s", k.ns)
+}
+
+// ContainerPort 回傳該 deployment 第一個容器的 containerPort（給 swagger / port-forward 預設用）。
+func (k *Kubectl) ContainerPort(ctx context.Context, service string) (int, error) {
+	out, err := k.ssh.Run(ctx, fmt.Sprintf(
+		"kubectl -n %s get deploy/%s -o jsonpath='{.spec.template.spec.containers[0].ports[0].containerPort}'",
+		k.ns, service))
+	if err != nil {
+		return 0, err
+	}
+	s := strings.TrimSpace(string(out))
+	if s == "" {
+		return 0, fmt.Errorf("no containerPort declared on deploy/%s", service)
+	}
+	return strconv.Atoi(s)
 }
 
 // HelmReleaseFor 從 deployment annotation 偵測它是哪個 helm release 裝的。

@@ -65,6 +65,12 @@ func (m ServiceDetail) Update(msg tea.Msg) (screen, tea.Cmd) {
 	switch k.String() {
 	case "esc", "q":
 		return m, pop()
+	case "w":
+		port := 0
+		if m.target != nil {
+			port = m.target.Port
+		}
+		return m, push(NewSwaggerScreen(m.kubectl.SSH(), m.kubectl.Namespace(), name, port))
 	case "X":
 		if m.release == "" {
 			return m, nil
@@ -130,8 +136,8 @@ func (m ServiceDetail) View() string {
 		hint = "  no pin/repo — add one in L2 to deploy"
 	}
 	lifecycle = groupStyle.Render("LIFECYCLE") + dimStyle.Render(hint) + "\n" + deployLine + uninstallLine
-	debug := groupStyle.Render("DEBUG") + dimStyle.Render("  coming next") + "\n" +
-		dimStyle.Render("  x exec   f port-forward   w swagger")
+	debug := groupStyle.Render("DEBUG") + dimStyle.Render("  ssh tunnel to your local browser") + "\n" +
+		dimStyle.Render("  x exec   f port-forward") + item("w", "swagger") + dimStyle.Render("(coming: x f)")
 
 	footer := footerStyle.Render("press a key · esc back · ctrl+c quit")
 
