@@ -66,11 +66,7 @@ func (m ServiceDetail) Update(msg tea.Msg) (screen, tea.Cmd) {
 	case "esc", "q":
 		return m, pop()
 	case "w":
-		port := 0
-		if m.target != nil {
-			port = m.target.Port
-		}
-		return m, push(NewSwaggerScreen(m.kubectl.SSH(), m.kubectl.Namespace(), name, port))
+		return m, push(NewSwaggerScreen(m.kubectl, name))
 	case "X":
 		if m.release == "" {
 			return m, nil

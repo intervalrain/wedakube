@@ -3,7 +3,6 @@ package tui
 import (
 	"context"
 	"fmt"
-	"net"
 	"os/exec"
 	"runtime"
 	"time"
@@ -15,70 +14,71 @@ import (
 )
 
 type swaggerReadyMsg struct {
-	url       string
-	localPort int
-	appPort   int
+	url      string
+	nodePort int
+	nodeIP   string
 }
 type swaggerErrMsg struct{ err error }
+type revertedMsg struct{ err error }
 
-// SwaggerScreen 開「ssh -L 隧道 + node 端 kubectl port-forward」二合一的進程，
-// 在本機瀏覽器開到 http://localhost:<port>/swagger。esc 同時收掉兩端。
+// SwaggerScreen 暫時把 svc patch 成 NodePort，組出 http://<node-ip>:<nodePort>/swagger
+// 在本機瀏覽器開。esc 自動 patch 回 ClusterIP（避免在共用 dev 留下暴露的 port）。
 type SwaggerScreen struct {
-	ssh     *cluster.SSH
-	ns      string
+	kc      *cluster.Kubectl
 	service string
-	appPort int // 0 = 自動偵測 deploy 的 containerPort
 
-	url       string
-	localPort int
-	realPort  int
-	ctx       context.Context
-	cancel    context.CancelFunc
-	ready     bool
-	err       error
+	url      string
+	nodePort int
+	nodeIP   string
+	ctx      context.Context
+	cancel   context.CancelFunc
+	ready    bool
+	err      error
+	reverted bool
+	revertOK bool
 }
 
-func NewSwaggerScreen(ssh *cluster.SSH, ns, service string, appPort int) SwaggerScreen {
+func NewSwaggerScreen(kc *cluster.Kubectl, service string) SwaggerScreen {
 	ctx, cancel := context.WithCancel(context.Background())
-	return SwaggerScreen{
-		ssh: ssh, ns: ns, service: service,
-		appPort: appPort,
-		ctx:     ctx, cancel: cancel,
+	return SwaggerScreen{kc: kc, service: service, ctx: ctx, cancel: cancel}
+}
+
+func (m SwaggerScreen) Init() tea.Cmd { return m.expose() }
+
+func (m SwaggerScreen) expose() tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(m.ctx, 15*time.Second)
+		defer cancel()
+
+		if _, err := m.kc.PatchServiceType(ctx, m.service, "NodePort"); err != nil {
+			return swaggerErrMsg{err}
+		}
+		// 給 k3s 一拍時間分配 nodePort
+		time.Sleep(400 * time.Millisecond)
+
+		port, err := m.kc.NodePort(ctx, m.service)
+		if err != nil {
+			return swaggerErrMsg{fmt.Errorf("read nodePort: %w", err)}
+		}
+		ip, err := m.kc.NodeIP(ctx)
+		if err != nil {
+			return swaggerErrMsg{fmt.Errorf("read node IP: %w", err)}
+		}
+
+		url := fmt.Sprintf("http://%s:%d/swagger", ip, port)
+		_ = openBrowser(url)
+		return swaggerReadyMsg{url: url, nodePort: port, nodeIP: ip}
 	}
 }
 
-func (m SwaggerScreen) Init() tea.Cmd {
-	return m.start()
-}
-
-func (m SwaggerScreen) start() tea.Cmd {
+func (m SwaggerScreen) revert() tea.Cmd {
+	kc := m.kc
+	svc := m.service
 	return func() tea.Msg {
-		port := m.appPort
-		if port == 0 {
-			kc := cluster.NewKubectl(m.ssh, m.ns)
-			ctx, cancel := context.WithTimeout(m.ctx, 8*time.Second)
-			if p, err := kc.ContainerPort(ctx, m.service); err == nil && p > 0 {
-				port = p
-			}
-			cancel()
-			if port == 0 {
-				port = 5001
-			}
-		}
-
-		localPort := pickLocalPort(18080, 18180)
-		remoteCmd := fmt.Sprintf("kubectl -n %s port-forward deploy/%s %d:%d", m.ns, m.service, localPort, port)
-		if err := m.ssh.PortForward(m.ctx, localPort, localPort, remoteCmd); err != nil {
-			return swaggerErrMsg{err}
-		}
-
-		if err := waitForPort(m.ctx, localPort, 6*time.Second); err != nil {
-			return swaggerErrMsg{fmt.Errorf("tunnel not ready: %w", err)}
-		}
-
-		url := fmt.Sprintf("http://localhost:%d/swagger", localPort)
-		_ = openBrowser(url)
-		return swaggerReadyMsg{url: url, localPort: localPort, appPort: port}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_, err := kc.PatchServiceType(ctx, svc, "ClusterIP")
+		return revertedMsg{err: err}
 	}
 }
 
@@ -86,17 +86,27 @@ func (m SwaggerScreen) Update(msg tea.Msg) (screen, tea.Cmd) {
 	switch msg := msg.(type) {
 	case swaggerReadyMsg:
 		m.url = msg.url
-		m.localPort = msg.localPort
-		m.realPort = msg.appPort
+		m.nodePort = msg.nodePort
+		m.nodeIP = msg.nodeIP
 		m.ready = true
 		return m, nil
 	case swaggerErrMsg:
 		m.err = msg.err
 		return m, nil
+	case revertedMsg:
+		m.reverted = true
+		m.revertOK = msg.err == nil
+		if !m.revertOK {
+			m.err = msg.err
+		}
+		return m, pop()
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "esc", "q":
-			m.cancel()
+			if m.ready && !m.reverted {
+				// 還在 NodePort 狀態 → 先 revert 再 pop
+				return m, m.revert()
+			}
 			return m, pop()
 		case "o":
 			if m.ready {
@@ -116,49 +126,20 @@ func (m SwaggerScreen) View() string {
 	case m.err != nil:
 		status = errStyle.Render("✗ " + m.err.Error())
 	case m.ready:
-		status = lipgloss.NewStyle().Foreground(lipgloss.Color("114")).Bold(true).Render("● TUNNEL OPEN")
+		status = lipgloss.NewStyle().Foreground(lipgloss.Color("203")).Bold(true).Render("● EXPOSED via NodePort  ") +
+			dimStyle.Render("(esc reverts to ClusterIP)")
 	default:
-		status = statusStyle.Render("opening tunnel …")
+		status = statusStyle.Render("patching svc to NodePort …")
 	}
 
 	var body string
 	if m.ready {
 		body = valStyle.Render(m.url) + "\n\n" +
-			labelStyle.Render(fmt.Sprintf("ns=%s    pod-port=%d    localhost=%d", m.ns, m.realPort, m.localPort))
+			labelStyle.Render(fmt.Sprintf("node=%s    nodePort=%d", m.nodeIP, m.nodePort))
 	}
 
-	footer := footerStyle.Render("o reopen browser · esc close tunnel & back")
+	footer := footerStyle.Render("o reopen browser · esc revert & back")
 	return lipgloss.JoinVertical(lipgloss.Left, header, "", status, "", body, "", footer)
-}
-
-// pickLocalPort 找一個本機可 bind 的 port（給 ssh -L 用）。
-func pickLocalPort(start, end int) int {
-	for p := start; p <= end; p++ {
-		l, err := net.Listen("tcp", fmt.Sprintf("localhost:%d", p))
-		if err == nil {
-			_ = l.Close()
-			return p
-		}
-	}
-	return start
-}
-
-// waitForPort 探本機 port 直到能連上（代表 ssh -L 接通了）。
-func waitForPort(ctx context.Context, port int, timeout time.Duration) error {
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		c, err := net.DialTimeout("tcp", fmt.Sprintf("localhost:%d", port), 500*time.Millisecond)
-		if err == nil {
-			_ = c.Close()
-			return nil
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(300 * time.Millisecond):
-		}
-	}
-	return fmt.Errorf("port %d not ready after %v", port, timeout)
 }
 
 func openBrowser(url string) error {
