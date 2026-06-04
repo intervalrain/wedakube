@@ -18,6 +18,12 @@ type connectedMsg struct {
 	helm config.HelmParams // 第一次連線時自動偵測，由 HostsScreen 存回 Host
 }
 
+// helmRefreshedMsg：R 鍵重新探測完，把新的 helm 參數寫回 host。
+type helmRefreshedMsg struct {
+	host string
+	helm config.HelmParams
+}
+
 // HostsScreen 是 L1：工具管理的主機清單。
 type HostsScreen struct {
 	store   *config.Store
@@ -76,6 +82,25 @@ func (m HostsScreen) selected() (config.Host, bool) {
 	return m.hosts[i], true
 }
 
+// refreshHelmCmd 重跑 ResolveWedaNamespace + SampleHelmParams，把整包 helm 參數刷新。
+// 用在 tenant 換掉、apiKey 輪替時，免得手編 state.json。
+func (m HostsScreen) refreshHelmCmd(h config.Host) tea.Cmd {
+	return func() tea.Msg {
+		ssh := cluster.NewSSH(h)
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		ns, err := cluster.ResolveWedaNamespace(ctx, ssh)
+		if err != nil {
+			return errMsg{err}
+		}
+		hp, err := cluster.NewKubectl(ssh, ns).SampleHelmParams(ctx)
+		if err != nil {
+			return errMsg{err}
+		}
+		return helmRefreshedMsg{host: h.Name, helm: hp}
+	}
+}
+
 func (m HostsScreen) connectCmd(h config.Host) tea.Cmd {
 	return func() tea.Msg {
 		ssh := cluster.NewSSH(h)
@@ -127,6 +152,12 @@ func (m HostsScreen) Update(msg tea.Msg) (screen, tea.Cmd) {
 			}
 		case "S":
 			return m, push(NewSetup(m.store))
+		case "R":
+			if h, ok := m.selected(); ok {
+				m.connect = "refreshing helm params for " + h.Name
+				m.err = nil
+				return m, m.refreshHelmCmd(h)
+			}
 		case "enter":
 			if h, ok := m.selected(); ok {
 				m.connect = h.Name
@@ -134,6 +165,14 @@ func (m HostsScreen) Update(msg tea.Msg) (screen, tea.Cmd) {
 				return m, m.connectCmd(h)
 			}
 		}
+	case helmRefreshedMsg:
+		m.connect = ""
+		if h, ok, _ := m.store.GetHost(msg.host); ok {
+			h.Helm = msg.helm
+			m.store.PutHost(h)
+			m = m.reload()
+		}
+		return m, nil
 	case connectedMsg:
 		m.connect = ""
 		// 自動偵測到新的 helm 參數就持久化
@@ -169,7 +208,7 @@ func (m HostsScreen) View() string {
 		status = statusStyle.Render(time.Now().Format("15:04:05"))
 	}
 
-	footer := footerStyle.Render("↑/↓ · enter connect · n new · d delete · S setup · r refresh · q quit")
+	footer := footerStyle.Render("↑/↓ · enter connect · n new · d delete · S setup · r refresh · R refresh-helm · q quit")
 
 	return lipgloss.JoinVertical(lipgloss.Left, header, m.table.View(), status, footer)
 }
