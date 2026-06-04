@@ -127,6 +127,22 @@ func (s *SSH) Stream(ctx context.Context, remoteCmd string) (io.Reader, error) {
 	return pr, nil
 }
 
+// PortForward 開一條 ssh -L 通道，同時在遠端跑 kubectl port-forward。
+// 兩件事綁同一個 ssh process：ctx cancel → 子程序死 → 遠端 kubectl 也跟著斷。
+func (s *SSH) PortForward(ctx context.Context, localPort, remotePort int, remoteCmd string) error {
+	args := append(s.opts(),
+		fmt.Sprintf("-L%d:localhost:%d", localPort, remotePort),
+		s.host.Dest(),
+		remoteCmd,
+	)
+	cmd := exec.CommandContext(ctx, "ssh", args...)
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	go func() { _ = cmd.Wait() }()
+	return nil
+}
+
 func (s *SSH) Close() error {
 	exec.Command("ssh", "-o", "ControlPath="+s.path, "-O", "exit", s.host.Dest()).Run()
 	return nil
