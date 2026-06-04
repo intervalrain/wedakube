@@ -166,6 +166,43 @@ func (k *Kubectl) SampleHelmParams(ctx context.Context) (config.HelmParams, erro
 	return hp, fmt.Errorf("no sample deployment with ECO_API_KEY in ns %s", k.ns)
 }
 
+// PatchServiceType 把 svc 切到 NodePort（暫時暴露）或還原 ClusterIP。
+func (k *Kubectl) PatchServiceType(ctx context.Context, svc, svcType string) (string, error) {
+	body := fmt.Sprintf(`{"spec":{"type":"%s"}}`, svcType)
+	out, err := k.ssh.Run(ctx, fmt.Sprintf("kubectl -n %s patch svc/%s -p '%s' 2>&1", k.ns, svc, body))
+	if err != nil {
+		return string(out), fmt.Errorf("patch svc/%s -> %s: %w", svc, svcType, err)
+	}
+	return string(out), nil
+}
+
+// NodePort 讀 svc 第一個 port 分配到的 nodePort（NodePort 模式下才有值）。
+func (k *Kubectl) NodePort(ctx context.Context, svc string) (int, error) {
+	out, err := k.ssh.Run(ctx, fmt.Sprintf(
+		"kubectl -n %s get svc/%s -o jsonpath='{.spec.ports[0].nodePort}'", k.ns, svc))
+	if err != nil {
+		return 0, err
+	}
+	s := strings.TrimSpace(string(out))
+	if s == "" {
+		return 0, fmt.Errorf("no nodePort allocated for svc/%s", svc)
+	}
+	return strconv.Atoi(s)
+}
+
+// NodeIP 從 kubectl get nodes 拿第一個 node 的 InternalIP（給組瀏覽器 URL 用）。
+func (k *Kubectl) NodeIP(ctx context.Context) (string, error) {
+	out, err := k.ssh.Run(ctx, `kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}'`)
+	if err != nil {
+		return "", err
+	}
+	s := strings.TrimSpace(string(out))
+	if s == "" {
+		return "", fmt.Errorf("no InternalIP found")
+	}
+	return s, nil
+}
+
 // ContainerPort 回傳該 deployment 第一個容器的 containerPort（給 swagger / port-forward 預設用）。
 func (k *Kubectl) ContainerPort(ctx context.Context, service string) (int, error) {
 	out, err := k.ssh.Run(ctx, fmt.Sprintf(
