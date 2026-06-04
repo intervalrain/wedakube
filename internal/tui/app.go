@@ -18,7 +18,9 @@ func pop() tea.Cmd          { return func() tea.Msg { return popScreen{} } }
 
 // App 是 root model，維護畫面堆疊並轉發訊息給最上層。
 type App struct {
-	stack []screen
+	stack  []screen
+	width  int // 最近一次的終端機尺寸；push 子畫面時補送讓 viewport 立刻滿版
+	height int
 }
 
 func NewApp(root screen) App {
@@ -36,10 +38,21 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, tea.Quit
 	}
 
+	// 記住終端機尺寸，之後 push 子畫面時可以補送
+	if sz, ok := msg.(tea.WindowSizeMsg); ok {
+		a.width = sz.Width
+		a.height = sz.Height
+	}
+
 	switch m := msg.(type) {
 	case pushScreen:
 		a.stack = append(a.stack, m.s)
-		return a, a.top().Init()
+		initCmd := a.top().Init()
+		if a.width > 0 {
+			sz := tea.WindowSizeMsg{Width: a.width, Height: a.height}
+			return a, tea.Batch(initCmd, func() tea.Msg { return sz })
+		}
+		return a, initCmd
 	case popScreen:
 		if len(a.stack) > 1 {
 			a.stack = a.stack[:len(a.stack)-1]
