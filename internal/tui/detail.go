@@ -90,7 +90,7 @@ func (m ServiceDetail) Update(msg tea.Msg) (screen, tea.Cmd) {
 			out, err := kc.RolloutRestart(ctx, svc)
 			return confirmDoneMsg{out: out, err: err}
 		}))
-	case "up":
+	case "+":
 		if isProtectedNS(m.kubectl.Namespace()) {
 			return m, nil
 		}
@@ -103,7 +103,7 @@ func (m ServiceDetail) Update(msg tea.Msg) (screen, tea.Cmd) {
 			out, err := kc.Scale(ctx, svc, 1)
 			return confirmDoneMsg{out: out, err: err}
 		}))
-	case "down":
+	case "-":
 		if isProtectedNS(m.kubectl.Namespace()) {
 			return m, nil
 		}
@@ -202,8 +202,8 @@ func (m ServiceDetail) View() string {
 	canWrite := !protected
 	deployStr := keyOrDim(canDeploy, "D", "deploy")
 	restartStr := keyOrDim(canWrite, "R", "restart")
-	startStr := keyOrDim(canWrite, "↑", "start")
-	stopStr := keyOrDim(canWrite, "↓", "stop")
+	startStr := keyOrDim(canWrite, "+", "start")
+	stopStr := keyOrDim(canWrite, "-", "stop")
 	rollbackStr := keyOrDim(canWrite, "z", "rollback")
 	deployLine := deployStr + "  " + restartStr + "  " + startStr + "  " + stopStr + "  " + rollbackStr
 
