@@ -24,6 +24,9 @@ func NewKubectl(ssh *SSH, ns string) *Kubectl {
 
 func (k *Kubectl) Namespace() string { return k.ns }
 
+// SetNamespace 讓 L2 在 user 編輯 host.Namespace 後可以原地切換 ns 而不用重建 kubectl。
+func (k *Kubectl) SetNamespace(ns string) { k.ns = ns }
+
 // SSH 讓上層（部署流程）取用底層連線。
 func (k *Kubectl) SSH() *SSH { return k.ssh }
 

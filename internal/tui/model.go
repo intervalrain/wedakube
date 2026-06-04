@@ -20,6 +20,7 @@ const refreshInterval = 3 * time.Second
 type servicesMsg []model.Service
 type errMsg struct{ err error }
 type tickMsg time.Time
+type nsRefreshMsg struct{} // pop 回 L2 / 首次 Init 時：對齊 host.Namespace 與 kubectl.ns
 
 var (
 	titleStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("231")).Background(lipgloss.Color("63")).Padding(0, 1)
@@ -70,7 +71,10 @@ func NewServiceList(kubectl *cluster.Kubectl, host string, store *config.Store) 
 }
 
 func (m ServiceList) Init() tea.Cmd {
-	return tea.Batch(m.fetch(), tick())
+	return tea.Batch(
+		func() tea.Msg { return nsRefreshMsg{} },
+		tick(),
+	)
 }
 
 func tick() tea.Cmd {
@@ -100,6 +104,12 @@ func (m ServiceList) Update(msg tea.Msg) (screen, tea.Cmd) {
 			return m, m.fetch()
 		case "a":
 			return m, push(NewWizard(m.store, m.kubectl.SSH(), m.host))
+		case "N":
+			cur := m.kubectl.Namespace()
+			if h, ok, _ := m.store.GetHost(m.host); ok && h.Namespace != "" {
+				cur = h.Namespace
+			}
+			return m, push(NewNamespaceEditor(m.store, m.host, cur))
 		case "d":
 			i := m.table.Cursor()
 			if i >= 0 && i < len(m.services) {
@@ -122,6 +132,15 @@ func (m ServiceList) Update(msg tea.Msg) (screen, tea.Cmd) {
 				return m, push(NewServiceDetail(m.kubectl, m.host, m.store, svc, tgt))
 			}
 		}
+	case nsRefreshMsg:
+		// pop 回來 / 首次 Init：對齊 host.Namespace 到 kubectl，並 refetch
+		if h, ok, _ := m.store.GetHost(m.host); ok {
+			if want := h.DerivedNamespace(); want != "" && want != m.kubectl.Namespace() {
+				m.kubectl.SetNamespace(want)
+			}
+		}
+		m.loading = true
+		return m, m.fetch()
 	case servicesMsg:
 		m.loading = false
 		m.err = nil
@@ -192,7 +211,7 @@ func (m ServiceList) View() string {
 			m.kubectl.Namespace(), len(m.table.Rows()), m.lastSync.Format("15:04:05")))
 	}
 
-	footer := footerStyle.Render("↑/↓ · enter open · a new deploy · d unpin · r refresh · esc back · ctrl+c quit")
+	footer := footerStyle.Render("↑/↓ · enter open · a new deploy · d unpin · N edit ns · r refresh · esc back · ctrl+c quit")
 
 	return lipgloss.JoinVertical(lipgloss.Left, header, m.table.View(), status, footer)
 }
