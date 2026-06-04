@@ -259,6 +259,16 @@ func versionBase(v string) string {
 }
 
 func (m WizardScreen) Update(msg tea.Msg) (screen, tea.Cmd) {
+	// 終端機尺寸更新：把瀏覽器 table 拉滿
+	if sz, ok := msg.(tea.WindowSizeMsg); ok {
+		h := sz.Height - 8 // 留 header / breadcrumb / 兩行空白 / hint / 邊框
+		if h < 5 {
+			h = 5
+		}
+		m.browser.SetHeight(h)
+		return m, nil
+	}
+
 	// step 0：repo 目錄瀏覽器
 	if m.idx == 0 {
 		if k, ok := msg.(tea.KeyMsg); ok {
