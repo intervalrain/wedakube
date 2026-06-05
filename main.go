@@ -10,10 +10,23 @@ import (
 	"github.com/intervalrain/wedakube/internal/tui"
 )
 
+// 編譯時透過 ldflags -X main.version=… 注入；參考 Makefile。
+var (
+	version = "dev"
+	commit  = "unknown"
+	date    = "unknown"
+)
+
 func main() {
-	if len(os.Args) > 1 && os.Args[1] == "deploy" {
-		runDeploy(os.Args[2:])
-		return
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "deploy":
+			runDeploy(os.Args[2:])
+			return
+		case "version", "--version", "-v":
+			fmt.Printf("kube %s (%s, built %s)\n", version, commit, date)
+			return
+		}
 	}
 	runTUI()
 }
