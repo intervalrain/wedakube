@@ -24,6 +24,9 @@ type helmRefreshedMsg struct {
 	helm config.HelmParams
 }
 
+// hostsReloadMsg：n / e 表單存完 pop 回來時觸發 reload。
+type hostsReloadMsg struct{}
+
 // HostsScreen 是 L1：工具管理的主機清單。
 type HostsScreen struct {
 	store   *config.Store
@@ -72,7 +75,10 @@ func (m HostsScreen) reload() HostsScreen {
 	return m
 }
 
-func (m HostsScreen) Init() tea.Cmd { return nil }
+func (m HostsScreen) Init() tea.Cmd {
+	// pop 回 L1 時觸發 reload，這樣 n/e 表單存完馬上看得到
+	return func() tea.Msg { return hostsReloadMsg{} }
+}
 
 func (m HostsScreen) selected() (config.Host, bool) {
 	i := m.table.Cursor()
@@ -152,6 +158,12 @@ func (m HostsScreen) Update(msg tea.Msg) (screen, tea.Cmd) {
 			}
 		case "S":
 			return m, push(NewSetup(m.store))
+		case "n":
+			return m, push(NewHostForm(m.store, nil))
+		case "e":
+			if h, ok := m.selected(); ok {
+				return m, push(NewHostForm(m.store, &h))
+			}
 		case "R":
 			if h, ok := m.selected(); ok {
 				m.connect = "refreshing helm params for " + h.Name
@@ -165,6 +177,8 @@ func (m HostsScreen) Update(msg tea.Msg) (screen, tea.Cmd) {
 				return m, m.connectCmd(h)
 			}
 		}
+	case hostsReloadMsg:
+		return m.reload(), nil
 	case helmRefreshedMsg:
 		m.connect = ""
 		if h, ok, _ := m.store.GetHost(msg.host); ok {
@@ -208,7 +222,7 @@ func (m HostsScreen) View() string {
 		status = statusStyle.Render(time.Now().Format("15:04:05"))
 	}
 
-	footer := footerStyle.Render("↑/↓ · enter connect · n new · d delete · S setup · r refresh · R refresh-helm · q quit")
+	footer := footerStyle.Render("↑/↓ · enter connect · n new · e edit · d delete · S setup · r refresh · R refresh-helm · q quit")
 
 	return lipgloss.JoinVertical(lipgloss.Left, header, m.table.View(), status, footer)
 }
