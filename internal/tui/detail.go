@@ -21,6 +21,9 @@ type helmReleaseMsg struct {
 	release, namespace string
 }
 
+// execDoneMsg：tea.ExecProcess 回來時觸發；err 多半是 0 / nil（user 正常 exit）。
+type execDoneMsg struct{ err error }
+
 var (
 	keyStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("231")).Bold(true)
 	groupStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("114")).Bold(true)
@@ -89,6 +92,10 @@ func (m ServiceDetail) Update(msg tea.Msg) (screen, tea.Cmd) {
 		m.releaseNS = rm.namespace
 		return m, nil
 	}
+	if _, ok := msg.(execDoneMsg); ok {
+		// shell 結束、TUI 回來，不用做任何事
+		return m, nil
+	}
 	k, ok := msg.(tea.KeyMsg)
 	if !ok {
 		return m, nil
@@ -100,6 +107,15 @@ func (m ServiceDetail) Update(msg tea.Msg) (screen, tea.Cmd) {
 		return m, pop()
 	case "w":
 		return m, push(NewSwaggerScreen(m.kubectl, name))
+	case "x":
+		if isProtectedNS(m.kubectl.Namespace()) {
+			return m, nil
+		}
+		remote := fmt.Sprintf("kubectl -n %s exec -it deploy/%s -- sh", m.kubectl.Namespace(), name)
+		sshCmd := m.kubectl.SSH().ExecCmd(context.Background(), remote)
+		return m, tea.ExecProcess(sshCmd, func(err error) tea.Msg {
+			return execDoneMsg{err: err}
+		})
 	case "R":
 		if isProtectedNS(m.kubectl.Namespace()) {
 			return m, nil
@@ -255,8 +271,9 @@ func (m ServiceDetail) View() string {
 		hint = "  ⚠ repo missing: " + strings.Join(missingPrereqs, ", ") + " — add them to enable D"
 	}
 	lifecycle := groupStyle.Render("LIFECYCLE") + dimStyle.Render(hint) + "\n" + deployLine + uninstallLine
-	debug := groupStyle.Render("DEBUG") + dimStyle.Render("  ssh tunnel to your local browser") + "\n" +
-		dimStyle.Render("  x exec   f port-forward") + item("w", "swagger") + dimStyle.Render("(coming: x f)")
+	xStr := keyOrDim(canWrite, "x", "exec")
+	debug := groupStyle.Render("DEBUG") + dimStyle.Render("  shell into pod · swagger via NodePort") + "\n" +
+		xStr + "  " + dimStyle.Render("f port-forward (coming)") + "  " + item("w", "swagger")
 
 	footer := footerStyle.Render("press a key · esc back · ctrl+c quit")
 
