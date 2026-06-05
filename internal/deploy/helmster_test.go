@@ -4,8 +4,8 @@ import "testing"
 
 func TestBasenameOf(t *testing.T) {
 	cases := map[string]string{
-		"registry.example.com/example-project/file-transfer": "file-transfer",
-		"registry.example.com/example-project/weda_file_transfer": "weda_file_transfer",
+		"registry.example.com/proj/file-transfer":      "file-transfer",
+		"registry.example.com/proj/weda_file_transfer": "weda_file_transfer",
 		"file-transfer": "file-transfer",
 		"":              "",
 	}
@@ -18,7 +18,7 @@ func TestBasenameOf(t *testing.T) {
 
 func TestSetQ(t *testing.T) {
 	// 一般值
-	if got, want := setQ("global.tenantId", "<TENANT_ID>-0000"), "--set global.tenantId='<TENANT_ID>-0000'"; got != want {
+	if got, want := setQ("global.tenantId", "tid-1234"), "--set global.tenantId='tid-1234'"; got != want {
 		t.Errorf("setQ plain = %q, want %q", got, want)
 	}
 	// 含單引號的值
