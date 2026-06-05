@@ -1,5 +1,9 @@
 APP_NAME := kube
-VERSION  := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+# 嚴格用 git tag 當 version（SemVer）。tag 不存在時退到 v0.0.0-dev。
+# 在 tag 上：v0.0.1
+# 超出 tag N 個 commit：v0.0.1-N-gSHA
+# working tree 髒：再加 -dirty
+VERSION  := $(shell git describe --tags --dirty 2>/dev/null || echo "v0.0.0-dev")
 COMMIT   := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 DATE     := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 LDFLAGS  := -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)
