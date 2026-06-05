@@ -8,7 +8,7 @@ COMMIT   := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 DATE     := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 LDFLAGS  := -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)
 
-.PHONY: build install uninstall clean cross
+.PHONY: build install uninstall clean cross audit install-hooks
 
 ## Build the binary for the current platform.
 build:
@@ -31,6 +31,17 @@ cross:
 	GOOS=linux  GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o dist/$(APP_NAME)_linux_arm64/$(APP_NAME) .
 	GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o dist/$(APP_NAME)_darwin_amd64/$(APP_NAME) .
 	GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o dist/$(APP_NAME)_darwin_arm64/$(APP_NAME) .
+
+## Scan working tree + history for likely-sensitive strings.
+audit:
+	@chmod +x scripts/audit.sh
+	@./scripts/audit.sh
+
+## Install git pre-push hook (calls audit.sh; blocks the push on leaks).
+install-hooks:
+	@chmod +x scripts/audit.sh scripts/pre-push
+	@ln -sf ../../scripts/pre-push .git/hooks/pre-push
+	@echo "✓ pre-push hook → scripts/pre-push (runs audit.sh)"
 
 ## Clean build artifacts.
 clean:

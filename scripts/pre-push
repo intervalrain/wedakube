@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# git pre-push hook — blocks the push if scripts/audit.sh finds anything.
+# Installed by `make install-hooks` (symlinks .git/hooks/pre-push here).
+set -e
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+exec "$REPO_ROOT/scripts/audit.sh"

@@ -1,0 +1,10 @@
+# One regex per line. Lines starting with # are ignored.
+# Copy this file to .audit-patterns (gitignored) and add your org-internal
+# names / hostnames / specific tenant IDs here so the audit script catches them
+# without those strings ever being committed to this repo.
+#
+# Examples (placeholders — replace with your actuals):
+#   internal-corp\.com
+#   harbor\.internal
+#   acme-prod
+#   your-cluster-alias

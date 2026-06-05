@@ -7,3 +7,6 @@ kube
 # private references (kept locally, not in repo)
 helmster.md
 NodePort.md
+
+# local audit patterns (org-specific names you don't want committed)
+.audit-patterns
