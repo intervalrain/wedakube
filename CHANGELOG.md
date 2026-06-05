@@ -3,6 +3,24 @@
 All notable changes are kept here. Tags follow [SemVer](https://semver.org)
 via `git describe --tags --dirty`.
 
+## v0.0.2 — 2026-06-05
+
+### Fixed
+
+- **L1 `n` new host** finally does something. The key was advertised
+  in the footer but had no handler — pressing it was a no-op. Replaced
+  with a proper multi-field form (`Name / HostName / User /
+  IdentityFile / Namespace`) that validates required fields, rejects
+  name collisions, and persists to `~/.k3sdeploy/state.json`.
+
+### Added
+
+- **L1 `e` edit host** opens the same form pre-filled, supporting
+  rename while preserving the host's cached `HelmParams` so you don't
+  need to `R refresh-helm` after editing.
+- `hostsReloadMsg` fires on `HostsScreen.Init`, so popping back from
+  the form refreshes the host list immediately.
+
 ## v0.0.1 — 2026-06-05
 
 First taggable release. Multi-host k3s ops console + build-push-deploy
