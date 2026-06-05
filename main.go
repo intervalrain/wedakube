@@ -46,16 +46,24 @@ func runTUI() {
 	}
 }
 
-// seedDefaultHost：首次執行時，若沒有任何 host 就放入 dev cluster 預設值（L1 host form 做好前的便利）。
+// seedDefaultHost：首次執行時，若沒有任何 host 且環境變數有設，
+// 就放一個預設 host 進來（L1 host form 做好前的便利）。
+// 需要設：KUBE_DEFAULT_HOST（顯示名）, KUBE_DEFAULT_HOSTNAME（IP/主機名）,
+// KUBE_DEFAULT_USER（ssh 使用者）, KUBE_DEFAULT_KEY（私鑰路徑）。
 func seedDefaultHost(store *config.Store) {
 	hosts, err := store.ListHosts()
 	if err != nil || len(hosts) > 0 {
 		return
 	}
+	name := os.Getenv("KUBE_DEFAULT_HOST")
+	hostname := os.Getenv("KUBE_DEFAULT_HOSTNAME")
+	if name == "" || hostname == "" {
+		return // 沒設環境變數就不 seed，使用者自己編 state.json 或用未來的 Host Form
+	}
 	store.PutHost(config.Host{
-		Name:         "my-cluster",
-		HostName:     "10.0.0.1",
-		User:         "ubuntu",
-		IdentityFile: "~/.ssh/private.key",
+		Name:         name,
+		HostName:     hostname,
+		User:         os.Getenv("KUBE_DEFAULT_USER"),
+		IdentityFile: os.Getenv("KUBE_DEFAULT_KEY"),
 	})
 }

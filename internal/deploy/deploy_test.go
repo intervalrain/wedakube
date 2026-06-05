@@ -2,6 +2,7 @@ package deploy
 
 import (
 	"context"
+	"os"
 	"testing"
 	"time"
 
@@ -16,7 +17,20 @@ func TestRolloutMechanicsIntegration(t *testing.T) {
 		t.Skip("integration test; needs cluster access")
 	}
 
-	ssh := cluster.NewSSH(config.Host{Name: "my-cluster", Alias: "my-cluster"})
+	host := os.Getenv("KUBE_TEST_HOSTNAME")
+	if host == "" {
+		t.Skip("integration; set KUBE_TEST_HOSTNAME to enable")
+	}
+	user := os.Getenv("KUBE_TEST_USER")
+	if user == "" {
+		user = "ubuntu"
+	}
+	ssh := cluster.NewSSH(config.Host{
+		Name:         "kube-test",
+		HostName:     host,
+		User:         user,
+		IdentityFile: os.Getenv("KUBE_TEST_KEY"),
+	})
 	defer ssh.Close()
 
 	tgt := config.Target{

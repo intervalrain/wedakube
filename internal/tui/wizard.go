@@ -207,7 +207,9 @@ func (m *WizardScreen) detect(repo string) {
 
 	// 4) image repo：用 host 的 registry/project（自動偵測過）+ service 原名（不轉底線）
 	if m.get("image") == "" {
-		registry, project := "registry.example.com", "edge-coa"
+		// 沒連過 host 取不到 helm 自動偵測值時的 fallback；
+		// 真實使用時 host.Helm 連線後就會帶正確值。
+		registry, project := "registry.example.com", "project"
 		if h, ok, _ := m.store.GetHost(m.host); ok {
 			if h.Helm.Registry != "" {
 				registry = h.Helm.Registry

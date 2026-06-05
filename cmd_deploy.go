@@ -13,7 +13,7 @@ import (
 
 // runDeploy 是 M2 的 headless 進入點：go run . deploy <repoPath>
 // 真正接進 TUe 之前，先用這個跑完整 pipeline。
-// 前置：(1) export FEED_PAT=<Azure DevOps PAT>  (2) docker login registry.example.com
+// 前置：(1) FEED_PAT 已設定（env 或 secrets.json）  (2) docker login <your-registry>
 func runDeploy(args []string) {
 	if len(args) < 1 {
 		fmt.Fprintln(os.Stderr, "usage: wedakube deploy <repoPath>")

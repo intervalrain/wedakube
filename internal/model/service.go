@@ -12,7 +12,7 @@ type Service struct {
 }
 
 // ShortImage 去掉 registry/project 前綴，只留 repo:tag，列表才不會被長字串塞爆。
-// registry.example.com/edge-coa/container-management:v1.0.0 -> container-management:v1.0.0
+// e.g. registry.example.com/project/my-svc:v1.0.0 -> my-svc:v1.0.0
 func (s Service) ShortImage() string {
 	if i := strings.LastIndex(s.Image, "/"); i >= 0 {
 		return s.Image[i+1:]

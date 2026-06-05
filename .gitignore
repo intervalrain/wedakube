@@ -3,3 +3,7 @@ dist/
 .claude
 wedakube
 kube
+
+# private references (kept locally, not in repo)
+helmster.md
+NodePort.md
