@@ -108,6 +108,14 @@ func (s *SSH) RunStdin(ctx context.Context, remoteCmd string, stdin []byte) ([]b
 	return out, nil
 }
 
+// ExecCmd 組一條會接管使用者 TTY 的 ssh 子程序（給 kubectl exec -it 之類的互動指令）。
+// 呼叫端通常透過 bubbletea 的 tea.ExecProcess 來跑：那會暫停 TUI、把終端機交給這個程序，
+// 程序結束（user 打 exit / Ctrl-D）後再把 TUI 喚醒。-t 是為了讓 ssh 在遠端配 PTY。
+func (s *SSH) ExecCmd(ctx context.Context, remoteCmd string) *exec.Cmd {
+	args := append(s.opts(), "-t", s.host.Dest(), remoteCmd)
+	return exec.CommandContext(ctx, "ssh", args...)
+}
+
 // Stream 跑一條會持續輸出的遠端指令（例如 kubectl logs -f）。
 // 回傳的 reader 串接 stdout+stderr；呼叫端 ctx cancel 就會把 ssh 子程序殺掉。
 func (s *SSH) Stream(ctx context.Context, remoteCmd string) (io.Reader, error) {
