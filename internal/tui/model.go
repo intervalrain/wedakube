@@ -113,7 +113,7 @@ func (m ServiceList) Update(msg tea.Msg) (screen, tea.Cmd) {
 			return m, push(NewWizard(m.store, m.kubectl.SSH(), m.host))
 		case "E":
 			if h, ok, _ := m.store.GetHost(m.host); ok {
-				return m, push(NewEcoApps(m.kubectl.SSH(), h))
+				return m, push(NewEcoApps(m.kubectl.SSH(), h, m.kubectl.Namespace()))
 			}
 			return m, nil
 		case "g":
@@ -125,7 +125,7 @@ func (m ServiceList) Update(msg tea.Msg) (screen, tea.Cmd) {
 			if h, ok, _ := m.store.GetHost(m.host); ok && h.Namespace != "" {
 				cur = h.Namespace
 			}
-			return m, push(NewNamespaceEditor(m.store, m.host, cur))
+			return m, push(NewNamespaceEditor(m.store, m.kubectl.SSH(), m.host, cur))
 		case "d":
 			i := m.table.Cursor()
 			if i >= 0 && i < len(m.services) {

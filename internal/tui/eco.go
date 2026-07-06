@@ -27,6 +27,7 @@ type ecoAppsMsg struct {
 type EcoAppsScreen struct {
 	ssh     *cluster.SSH
 	host    config.Host
+	ns      string // tenant ns（fallback key 探索用）
 	client  *eco.Client
 	table   table.Model
 	apps    []eco.App
@@ -34,7 +35,7 @@ type EcoAppsScreen struct {
 	err     error
 }
 
-func NewEcoApps(ssh *cluster.SSH, host config.Host) EcoAppsScreen {
+func NewEcoApps(ssh *cluster.SSH, host config.Host, ns string) EcoAppsScreen {
 	columns := []table.Column{
 		{Title: "NAME", Width: 26},
 		{Title: "STATUS", Width: 8},
@@ -47,10 +48,13 @@ func NewEcoApps(ssh *cluster.SSH, host config.Host) EcoAppsScreen {
 	st.Selected = st.Selected.Bold(true).Foreground(lipgloss.Color("231")).Background(lipgloss.Color("63"))
 	t.SetStyles(st)
 
+	client := eco.New(ssh, host.Helm.EcoApiKey, host.Helm.SrpName)
+	client.SetFallbackNamespace(ns) // cached key 失效時自動借現役服務的 key
 	return EcoAppsScreen{
 		ssh:     ssh,
 		host:    host,
-		client:  eco.New(ssh, host.Helm.EcoApiKey, host.Helm.SrpName),
+		ns:      ns,
+		client:  client,
 		table:   t,
 		loading: true,
 	}
@@ -97,7 +101,7 @@ func (m EcoAppsScreen) Update(msg tea.Msg) (screen, tea.Cmd) {
 		case "enter":
 			i := m.table.Cursor()
 			if i >= 0 && i < len(m.apps) {
-				return m, push(NewEcoConfig(m.ssh, m.host, m.apps[i].Name))
+				return m, push(NewEcoConfig(m.ssh, m.host, m.apps[i].Name, m.ns))
 			}
 			return m, nil
 		}
@@ -148,12 +152,14 @@ type EcoConfigScreen struct {
 	tmpFile string
 }
 
-func NewEcoConfig(ssh *cluster.SSH, host config.Host, service string) EcoConfigScreen {
+func NewEcoConfig(ssh *cluster.SSH, host config.Host, service, ns string) EcoConfigScreen {
+	client := eco.New(ssh, host.Helm.EcoApiKey, host.Helm.SrpName)
+	client.SetFallbackNamespace(ns)
 	return EcoConfigScreen{
 		ssh:     ssh,
 		host:    host,
 		service: service,
-		client:  eco.New(ssh, host.Helm.EcoApiKey, host.Helm.SrpName),
+		client:  client,
 		vp:      viewport.New(100, 22),
 		loading: true,
 	}

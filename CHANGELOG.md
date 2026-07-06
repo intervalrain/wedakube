@@ -27,11 +27,21 @@ via `git describe --tags --dirty`.
   Deploy pipeline, rollout-timeout diagnosis (CrashLoopBackOff → ECO
   404 root cause), ECO API recipes, manual helm procedures.
 
+- **Namespace picker.** `N` (L2) and the wizard's namespace step now
+  list the cluster's actual namespaces to pick from (● = current,
+  🔒 = protected/read-only) instead of free-text input. `i` falls back
+  to manual typing for a namespace that doesn't exist yet.
+
 ### Improved
 
 - **L3 deploy hints** now catch one more failure ahead of time: repo
   has `appcfg.yaml` but the host's Helm params were never detected →
   explicit warning instead of a mid-deploy error.
+- **ECO login resilience.** Helm-param auto-detect now samples only
+  *ready* deployments (a CrashLooping service is often the one whose
+  key is wrong), and ECO login falls back to trying keys from other
+  running services in the namespace when the cached key is rejected
+  (`record not found`), adopting the first key that works.
 
 ## v0.0.2 — 2026-06-05
 

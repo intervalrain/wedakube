@@ -30,8 +30,9 @@ type Client struct {
 	APIKey  string
 	SrpName string
 
-	endpoint string // http://<clusterIP>:<port>，第一次用到時解析
-	token    string
+	fallbackNS string // 非空 = login 失敗時，從這個 ns 現役服務撈候選 key 重試
+	endpoint   string // http://<clusterIP>:<port>，第一次用到時解析
+	token      string
 }
 
 func New(ssh *cluster.SSH, apiKey, srpName string) *Client {
@@ -60,12 +61,46 @@ func (c *Client) Endpoint(ctx context.Context) (string, error) {
 	return c.endpoint, nil
 }
 
+// SetFallbackNamespace 讓 Login 在主 key 失敗（例如 record not found）時，
+// 自動從該 ns「跑得起來的」服務撈其他 ECO_API_KEY 逐一重試。
+func (c *Client) SetFallbackNamespace(ns string) { c.fallbackNS = ns }
+
 // Login 用 apiKey+srpName 換 accessToken（POST /auth/token）。
+// cached key 可能來自一個 key 本身就是錯的服務（CrashLoop 中的那種），
+// 所以失敗時會嘗試 fallback ns 裡現役服務的 key，成功就換用它。
 func (c *Client) Login(ctx context.Context) error {
-	if c.APIKey == "" {
+	if c.APIKey == "" && c.fallbackNS == "" {
 		return fmt.Errorf("no ECO API key on this host — reconnect the host once so helm params get auto-detected")
 	}
-	body, _ := json.Marshal(map[string]string{"apiKey": c.APIKey, "srpName": c.SrpName})
+	primaryErr := c.loginWith(ctx, c.APIKey)
+	if primaryErr == nil {
+		return nil
+	}
+	if c.fallbackNS == "" {
+		return primaryErr
+	}
+	keys, err := c.discoverKeys(ctx)
+	if err != nil {
+		return fmt.Errorf("%w (fallback key discovery also failed: %v)", primaryErr, err)
+	}
+	for _, k := range keys {
+		if k == c.APIKey {
+			continue
+		}
+		if err := c.loginWith(ctx, k); err == nil {
+			c.APIKey = k // 這把有效，之後都用它
+			return nil
+		}
+	}
+	return fmt.Errorf("%w (tried %d fallback keys from running services in %s — all rejected)",
+		primaryErr, len(keys), c.fallbackNS)
+}
+
+func (c *Client) loginWith(ctx context.Context, apiKey string) error {
+	if apiKey == "" {
+		return fmt.Errorf("empty api key")
+	}
+	body, _ := json.Marshal(map[string]string{"apiKey": apiKey, "srpName": c.SrpName})
 	code, out, err := c.call(ctx, "POST", "/auth/token", body, false)
 	if err != nil {
 		return err
@@ -81,6 +116,50 @@ func (c *Client) Login(ctx context.Context) error {
 	}
 	c.token = r.AccessToken
 	return nil
+}
+
+// discoverKeys 從 fallback ns 撈現役（ready>0）服務的 ECO_API_KEY 清單（去重）。
+func (c *Client) discoverKeys(ctx context.Context) ([]string, error) {
+	out, err := c.ssh.Run(ctx, fmt.Sprintf("kubectl -n %s get deploy -o json", c.fallbackNS))
+	if err != nil {
+		return nil, err
+	}
+	var list struct {
+		Items []struct {
+			Spec struct {
+				Template struct {
+					Spec struct {
+						Containers []struct {
+							Env []struct {
+								Name  string `json:"name"`
+								Value string `json:"value"`
+							} `json:"env"`
+						} `json:"containers"`
+					} `json:"spec"`
+				} `json:"template"`
+			} `json:"spec"`
+			Status struct {
+				ReadyReplicas int `json:"readyReplicas"`
+			} `json:"status"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(out, &list); err != nil {
+		return nil, err
+	}
+	seen := map[string]bool{}
+	var keys []string
+	for _, it := range list.Items {
+		if it.Status.ReadyReplicas == 0 || len(it.Spec.Template.Spec.Containers) == 0 {
+			continue
+		}
+		for _, e := range it.Spec.Template.Spec.Containers[0].Env {
+			if e.Name == "ECO_API_KEY" && e.Value != "" && !seen[e.Value] {
+				seen[e.Value] = true
+				keys = append(keys, e.Value)
+			}
+		}
+	}
+	return keys, nil
 }
 
 // ListApps 列出這個 tenant/srp 下所有 registered app。

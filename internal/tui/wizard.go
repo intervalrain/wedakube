@@ -38,6 +38,14 @@ type WizardScreen struct {
 	cwd     string
 	browser table.Model
 	entries []dirEntry
+
+	// ns 步驟：從 cluster 挑選（i 可切手動輸入）
+	nsTable    table.Model
+	nsNames    []string
+	nsLoaded   bool
+	nsFetching bool
+	nsManual   bool
+	nsErr      error
 }
 
 func NewWizard(store *config.Store, ssh *cluster.SSH, host string) WizardScreen {
@@ -78,6 +86,7 @@ func NewWizard(store *config.Store, ssh *cluster.SSH, host string) WizardScreen 
 		store: store, ssh: ssh, host: host,
 		fields: fields, input: ti,
 		cwd: pickStartDir(), browser: b,
+		nsTable: newNSTable(),
 	}
 	w.reloadBrowser()
 	w.syncInput()
@@ -148,7 +157,10 @@ func (m *WizardScreen) reloadBrowser() {
 	m.browser.SetCursor(0)
 }
 
-func (m WizardScreen) Init() tea.Cmd { return textinput.Blink }
+// Init 順便預抓 ns 清單，走到 ns 步驟時 picker 直接就緒。
+func (m WizardScreen) Init() tea.Cmd {
+	return tea.Batch(textinput.Blink, fetchNamespaces(m.ssh))
+}
 
 func (m *WizardScreen) syncInput() {
 	if m.idx < len(m.fields) {
@@ -260,6 +272,25 @@ func versionBase(v string) string {
 	return v
 }
 
+// nsIdx 找出 ns 欄位在 fields 的位置。
+func (m WizardScreen) nsIdx() int {
+	for i, f := range m.fields {
+		if f.key == "ns" {
+			return i
+		}
+	}
+	return -1
+}
+
+// maybeFetchNS：剛切到 ns 步驟且清單還沒載 → 觸發抓取。
+func (m *WizardScreen) maybeFetchNS() tea.Cmd {
+	if m.idx == m.nsIdx() && !m.nsLoaded && !m.nsFetching {
+		m.nsFetching = true
+		return fetchNamespaces(m.ssh)
+	}
+	return nil
+}
+
 func (m WizardScreen) Update(msg tea.Msg) (screen, tea.Cmd) {
 	// 終端機尺寸更新：把瀏覽器 table 拉滿
 	if sz, ok := msg.(tea.WindowSizeMsg); ok {
@@ -268,7 +299,52 @@ func (m WizardScreen) Update(msg tea.Msg) (screen, tea.Cmd) {
 			h = 5
 		}
 		m.browser.SetHeight(h)
+		m.nsTable.SetHeight(h)
 		return m, nil
+	}
+
+	// ns 清單回來了（不管目前在哪一步都先收下）
+	if nl, ok := msg.(nsListMsg); ok {
+		m.nsFetching = false
+		m.nsLoaded = true
+		m.nsErr = nl.err
+		m.nsNames = nl.names
+		m.nsTable.SetRows(nsRows(nl.names, m.get("ns"), false))
+		for i, n := range nl.names {
+			if n == m.get("ns") {
+				m.nsTable.SetCursor(i)
+			}
+		}
+		return m, nil
+	}
+
+	// ns 步驟：picker（nsManual = true 時落回一般文字輸入分支）
+	if m.idx == m.nsIdx() && !m.nsManual {
+		if k, ok := msg.(tea.KeyMsg); ok {
+			switch k.String() {
+			case "esc":
+				return m, pop()
+			case "i":
+				m.nsManual = true
+				m.syncInput()
+				return m, textinput.Blink
+			case "shift+tab":
+				m.idx--
+				m.syncInput()
+				return m, nil
+			case "enter":
+				i := m.nsTable.Cursor()
+				if i >= 0 && i < len(m.nsNames) {
+					m.set("ns", m.nsNames[i])
+					m.idx++
+					m.syncInput()
+				}
+				return m, nil
+			}
+		}
+		var cmd tea.Cmd
+		m.nsTable, cmd = m.nsTable.Update(msg)
+		return m, cmd
 	}
 
 	// step 0：repo 目錄瀏覽器
@@ -333,20 +409,27 @@ func (m WizardScreen) Update(msg tea.Msg) (screen, tea.Cmd) {
 
 	switch k.String() {
 	case "esc":
+		if m.nsManual && m.idx == m.nsIdx() {
+			m.nsManual = false // 手動輸入 ns → 回 picker
+			return m, nil
+		}
 		return m, pop()
 	case "enter", "tab":
 		m.fields[m.idx].value = strings.TrimSpace(m.input.Value())
 		if m.fields[m.idx].key == "repo" {
 			m.detect(m.fields[m.idx].value)
 		}
+		m.nsManual = false
 		m.idx++
 		m.syncInput()
-		return m, nil
+		return m, m.maybeFetchNS()
 	case "shift+tab":
 		if m.idx > 0 {
 			m.fields[m.idx].value = m.input.Value()
+			m.nsManual = false
 			m.idx--
 			m.syncInput()
+			return m, m.maybeFetchNS()
 		}
 		return m, nil
 	}
@@ -390,6 +473,22 @@ func (m WizardScreen) View() string {
 		bread := dimStyle.Render(m.cwd)
 		hint := dimStyle.Render("◆ has appcfg.yaml / Dockerfile · enter on ◆ = select · enter on dir = open · esc cancel")
 		return lipgloss.JoinVertical(lipgloss.Left, header, "", bread, m.browser.View(), "", hint)
+	}
+
+	// ns 步驟：picker
+	if m.idx == m.nsIdx() && !m.nsManual {
+		var status string
+		switch {
+		case m.nsErr != nil:
+			status = errStyle.Render("✗ " + m.nsErr.Error())
+		case !m.nsLoaded:
+			status = statusStyle.Render("loading namespaces from cluster…")
+		default:
+			status = statusStyle.Render("● = current default")
+		}
+		hint := dimStyle.Render("enter select · i type manually (new ns) · shift+tab back · esc cancel")
+		return lipgloss.JoinVertical(lipgloss.Left, header, "",
+			valStyle.Render("Namespace"), m.nsTable.View(), status, "", hint)
 	}
 
 	cur := m.fields[m.idx]

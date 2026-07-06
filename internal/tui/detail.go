@@ -119,7 +119,7 @@ func (m ServiceDetail) Update(msg tea.Msg) (screen, tea.Cmd) {
 	case "w":
 		return m, push(NewSwaggerScreen(m.kubectl, name))
 	case "e":
-		return m, push(NewEcoConfig(m.kubectl.SSH(), m.hostCfg, name))
+		return m, push(NewEcoConfig(m.kubectl.SSH(), m.hostCfg, name, m.kubectl.Namespace()))
 	case "g":
 		return m, push(NewGuide("guide · "+name,
 			ServiceGuideContent(m.hostCfg, m.kubectl.Namespace(), name, m.target)))

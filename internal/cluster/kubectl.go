@@ -31,6 +31,21 @@ func (k *Kubectl) SetNamespace(ns string) { k.ns = ns }
 // SSH 讓上層（部署流程）取用底層連線。
 func (k *Kubectl) SSH() *SSH { return k.ssh }
 
+// ListNamespaces 列出 cluster 上所有 namespace 名稱（給 ns picker 用）。
+func ListNamespaces(ctx context.Context, ssh *SSH) ([]string, error) {
+	out, err := ssh.Run(ctx, `kubectl get ns -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}'`)
+	if err != nil {
+		return nil, err
+	}
+	var names []string
+	for _, line := range strings.Split(string(out), "\n") {
+		if name := strings.TrimSpace(line); name != "" {
+			names = append(names, name)
+		}
+	}
+	return names, nil
+}
+
 // ResolveWedaNamespace 找出結尾為 -weda 的 tenant namespace（README 的作法）。
 func ResolveWedaNamespace(ctx context.Context, ssh *SSH) (string, error) {
 	out, err := ssh.Run(ctx, `kubectl get ns -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}'`)
@@ -123,6 +138,9 @@ func (k *Kubectl) SampleHelmParams(ctx context.Context) (config.HelmParams, erro
 					} `json:"spec"`
 				} `json:"template"`
 			} `json:"spec"`
+			Status struct {
+				ReadyReplicas int `json:"readyReplicas"`
+			} `json:"status"`
 		} `json:"items"`
 	}
 	if err := json.Unmarshal(out, &list); err != nil {
@@ -131,6 +149,10 @@ func (k *Kubectl) SampleHelmParams(ctx context.Context) (config.HelmParams, erro
 
 	for _, it := range list.Items {
 		if len(it.Spec.Template.Spec.Containers) == 0 {
+			continue
+		}
+		// 只從跑得起來的服務取樣：CrashLoop 中的服務常常就是 key 錯的那個
+		if it.Status.ReadyReplicas == 0 {
 			continue
 		}
 		c := it.Spec.Template.Spec.Containers[0]
