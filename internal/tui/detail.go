@@ -42,6 +42,15 @@ var protectedNamespaces = map[string]bool{
 
 func isProtectedNS(ns string) bool { return protectedNamespaces[ns] }
 
+// hasAppcfg：repo 有 appcfg.yaml = 會走 helmster 路徑 = 需要 host helm params。
+func hasAppcfg(t *config.Target) bool {
+	if t == nil {
+		return false
+	}
+	_, err := os.Stat(filepath.Join(t.Context, "appcfg.yaml"))
+	return err == nil
+}
+
 // deployPrereqsMissing 回傳 target 部署前缺哪些檔（K3S 部署 procedure 的硬性前置）。
 // 兩個都到 = D 才會亮。
 func deployPrereqsMissing(t *config.Target) []string {
@@ -66,6 +75,7 @@ func deployPrereqsMissing(t *config.Target) []string {
 type ServiceDetail struct {
 	kubectl    *cluster.Kubectl
 	host       string
+	hostCfg    config.Host // 完整 host 設定（ECO key / helm params 用）
 	store      *config.Store
 	svc        model.Service
 	target     *config.Target // 非 nil = 此服務有部署目標，可按 D
@@ -74,7 +84,8 @@ type ServiceDetail struct {
 }
 
 func NewServiceDetail(kc *cluster.Kubectl, host string, store *config.Store, svc model.Service, target *config.Target) ServiceDetail {
-	return ServiceDetail{kubectl: kc, host: host, store: store, svc: svc, target: target}
+	hc, _, _ := store.GetHost(host)
+	return ServiceDetail{kubectl: kc, host: host, hostCfg: hc, store: store, svc: svc, target: target}
 }
 
 func (m ServiceDetail) Init() tea.Cmd {
@@ -107,6 +118,11 @@ func (m ServiceDetail) Update(msg tea.Msg) (screen, tea.Cmd) {
 		return m, pop()
 	case "w":
 		return m, push(NewSwaggerScreen(m.kubectl, name))
+	case "e":
+		return m, push(NewEcoConfig(m.kubectl.SSH(), m.hostCfg, name))
+	case "g":
+		return m, push(NewGuide("guide · "+name,
+			ServiceGuideContent(m.hostCfg, m.kubectl.Namespace(), name, m.target)))
 	case "x":
 		if isProtectedNS(m.kubectl.Namespace()) {
 			return m, nil
@@ -266,16 +282,18 @@ func (m ServiceDetail) View() string {
 	case protected:
 		hint = "  ⚠ protected namespace — writes disabled"
 	case m.target == nil:
-		hint = "  no pin/repo — add one in L2 to enable D deploy"
+		hint = "  no pin/repo — press a in service list to bind a repo, then D lights up"
 	case len(missingPrereqs) > 0:
 		hint = "  ⚠ repo missing: " + strings.Join(missingPrereqs, ", ") + " — add them to enable D"
+	case hasAppcfg(m.target) && m.hostCfg.Helm.TenantID == "":
+		hint = "  ⚠ host helm params not detected — reopen this host from L1 to auto-detect, or D will fail"
 	}
 	lifecycle := groupStyle.Render("LIFECYCLE") + dimStyle.Render(hint) + "\n" + deployLine + uninstallLine
 	xStr := keyOrDim(canWrite, "x", "exec")
-	debug := groupStyle.Render("DEBUG") + dimStyle.Render("  shell into pod · swagger via NodePort") + "\n" +
-		xStr + "  " + dimStyle.Render("f port-forward (coming)") + "  " + item("w", "swagger")
+	debug := groupStyle.Render("DEBUG") + dimStyle.Render("  shell into pod · swagger via NodePort · eco config center") + "\n" +
+		xStr + "  " + item("w", "swagger") + "  " + item("e", "eco config")
 
-	footer := footerStyle.Render("press a key · esc back · ctrl+c quit")
+	footer := footerStyle.Render("press a key · g guide (DIY commands) · esc back · ctrl+c quit")
 
 	return lipgloss.JoinVertical(lipgloss.Left,
 		header, "", summary, "", inspect, "", lifecycle, "", debug, footer)

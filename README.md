@@ -51,11 +51,20 @@ Inside the TUI:
 ```
 L1 Host list  →  enter  →  L2 Services  →  enter  →  L3 Detail
                             a  add deploy target          D  deploy
+                            E  eco: list apps             e  eco: view/edit config
+                            g  guide (DIY commands)       g  guide (DIY commands)
                             d  unpin                      X  helm uninstall
                             N  edit namespace             w  swagger
 ```
 
-Press `?` on most screens for the full key map (footer is always visible).
+Press `g` on L2/L3 for **guided mode**: a copy-paste sheet of the real
+commands behind every TUI action (ssh, kubectl, buildx, the full
+`helm upgrade --install` with your host's values, and the ECO curl
+chain) so you can run them yourself.
+
+**ECO config center**: `E` on L2 lists all registered apps; `e` on L3
+opens that service's config — `E` inside edits it in `$EDITOR` and PUTs
+it back, `D` deletes the registration. All writes are confirm-gated.
 
 ## Deploy prerequisites
 

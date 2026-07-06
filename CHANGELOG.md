@@ -3,6 +3,36 @@
 All notable changes are kept here. Tags follow [SemVer](https://semver.org)
 via `git describe --tags --dirty`.
 
+## v0.0.3 — 2026-06-25
+
+### Added
+
+- **ECO config center integration** (`internal/eco`). API client that
+  drives eco-server over SSH curl against its clusterIP — no
+  port-forward, no local network path needed. Auto login
+  (`/auth/token`, `accessToken`), auto re-login on 401.
+  - **L2 `E`** lists every registered application (name / status /
+    version / id).
+  - **L3 `e`** opens the selected service's full ECO config. `E` edits
+    the JSON in `$EDITOR` and PUTs it back (confirm-gated, JSON
+    validated, no-op if unchanged). `D` deletes the ECO registration
+    (confirm-gated; the deployment itself is untouched).
+- **Guided mode.** `g` on L2/L3 opens a copy-paste command sheet with
+  the *actual* host / namespace / service / ECO key values filled in:
+  ssh, discovery, build & push, the full OCI `helm upgrade --install`
+  with all `--set` flags, tag-only `--reuse-values` update, rollout
+  watching, and the complete ECO curl chain. Learn-by-doing companion
+  to every TUI action.
+- **`wedakube-ops` Claude skill** (`.claude/skills/wedakube-ops/`).
+  Deploy pipeline, rollout-timeout diagnosis (CrashLoopBackOff → ECO
+  404 root cause), ECO API recipes, manual helm procedures.
+
+### Improved
+
+- **L3 deploy hints** now catch one more failure ahead of time: repo
+  has `appcfg.yaml` but the host's Helm params were never detected →
+  explicit warning instead of a mid-deploy error.
+
 ## v0.0.2 — 2026-06-05
 
 ### Fixed

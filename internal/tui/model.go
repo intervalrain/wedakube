@@ -111,6 +111,15 @@ func (m ServiceList) Update(msg tea.Msg) (screen, tea.Cmd) {
 			return m, m.fetch()
 		case "a":
 			return m, push(NewWizard(m.store, m.kubectl.SSH(), m.host))
+		case "E":
+			if h, ok, _ := m.store.GetHost(m.host); ok {
+				return m, push(NewEcoApps(m.kubectl.SSH(), h))
+			}
+			return m, nil
+		case "g":
+			h, _, _ := m.store.GetHost(m.host)
+			return m, push(NewGuide("guide · "+m.host,
+				HostGuideContent(h, m.kubectl.Namespace())))
 		case "N":
 			cur := m.kubectl.Namespace()
 			if h, ok, _ := m.store.GetHost(m.host); ok && h.Namespace != "" {
@@ -218,7 +227,7 @@ func (m ServiceList) View() string {
 			m.kubectl.Namespace(), len(m.table.Rows()), m.lastSync.Format("15:04:05")))
 	}
 
-	footer := footerStyle.Render("↑/↓ · enter open · a new deploy · d unpin · N edit ns · r refresh · esc back · ctrl+c quit")
+	footer := footerStyle.Render("↑/↓ · enter open · a new deploy · E eco apps · g guide · d unpin · N edit ns · r refresh · esc back")
 
 	return lipgloss.JoinVertical(lipgloss.Left, header, m.table.View(), status, footer)
 }
