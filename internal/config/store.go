@@ -13,9 +13,13 @@ type State struct {
 	Pins        map[string][]string `json:"pins"`                  // key = host.Name -> 服務名清單
 	Targets     map[string]Target   `json:"targets"`               // key = repoPath
 	Counters    map[string]int      `json:"counters"`              // key = service|YYYYMMDD -> 當日 build 序號
+	Builds      map[string]string   `json:"builds,omitempty"`      // key = imageRepo:tag -> git commit it was built from
 }
 
 type Store struct{ path string }
+
+// NewStore opens the store at path (tests, or an alternate state file).
+func NewStore(path string) *Store { return &Store{path: path} }
 
 func DefaultStore() (*Store, error) {
 	home, err := os.UserHomeDir()
@@ -30,7 +34,7 @@ func DefaultStore() (*Store, error) {
 }
 
 func (s *Store) load() (State, error) {
-	st := State{Pins: map[string][]string{}, Targets: map[string]Target{}, Counters: map[string]int{}}
+	st := State{Pins: map[string][]string{}, Targets: map[string]Target{}, Counters: map[string]int{}, Builds: map[string]string{}}
 	b, err := os.ReadFile(s.path)
 	if os.IsNotExist(err) {
 		return st, nil
@@ -49,6 +53,9 @@ func (s *Store) load() (State, error) {
 	}
 	if st.Counters == nil {
 		st.Counters = map[string]int{}
+	}
+	if st.Builds == nil {
+		st.Builds = map[string]string{}
 	}
 	return st, nil
 }
@@ -224,4 +231,24 @@ func (s *Store) NextBuildNumber(service, date string) (int, error) {
 		return 0, err
 	}
 	return n, nil
+}
+
+// RecordBuild remembers which commit an image tag was built from.
+func (s *Store) RecordBuild(imageRepo, tag, rev string) error {
+	st, err := s.load()
+	if err != nil {
+		return err
+	}
+	st.Builds[imageRepo+":"+tag] = rev
+	return s.save(st)
+}
+
+// BuildRev returns the commit an image tag was built from, if kube built it.
+func (s *Store) BuildRev(imageRepo, tag string) (string, bool, error) {
+	st, err := s.load()
+	if err != nil {
+		return "", false, err
+	}
+	rev, ok := st.Builds[imageRepo+":"+tag]
+	return rev, ok, nil
 }

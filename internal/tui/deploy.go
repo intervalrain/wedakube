@@ -56,7 +56,7 @@ func (m DeployScreen) Init() tea.Cmd {
 		} else if h, ok, _ := m.store.GetHost(m.target.SSHAlias); ok {
 			hp = h.Helm
 		}
-		_, err := deploy.Deploy(context.Background(), m.ssh, m.store, m.target, hp, date, feedPAT, "", true, emit)
+		_, err := deploy.Deploy(context.Background(), m.ssh, m.store, m.target, hp, date, feedPAT, "", deploy.ModeAuto, true, emit)
 		m.endCh <- err
 	}()
 	return tea.Batch(waitEvent(m.events), waitEnd(m.endCh))

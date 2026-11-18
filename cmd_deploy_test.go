@@ -14,6 +14,8 @@ func TestParseDeployArgs(t *testing.T) {
 		{[]string{"-h"}, deployOpts{repo: ".", help: true}},
 		{[]string{"--ref", "feature/x", "/r"}, deployOpts{repo: "/r", ref: "feature/x"}},
 		{[]string{"/r", "--ref=021fb838"}, deployOpts{repo: "/r", ref: "021fb838"}},
+		{[]string{"--mode", "image"}, deployOpts{repo: ".", mode: "image"}},
+		{[]string{"--mode=full", "/r"}, deployOpts{repo: "/r", mode: "full"}},
 	}
 	for _, c := range cases {
 		got, err := parseDeployArgs(c.args)
@@ -21,7 +23,7 @@ func TestParseDeployArgs(t *testing.T) {
 			t.Errorf("parseDeployArgs(%q) = %+v, %v; want %+v", c.args, got, err, c.want)
 		}
 	}
-	for _, bad := range [][]string{{"--ref"}, {"--ref="}, {"--bogus"}, {"/a", "/b"}} {
+	for _, bad := range [][]string{{"--ref"}, {"--ref="}, {"--bogus"}, {"/a", "/b"}, {"--mode"}, {"--mode=fast"}} {
 		if _, err := parseDeployArgs(bad); err == nil {
 			t.Errorf("parseDeployArgs(%q) should fail", bad)
 		}

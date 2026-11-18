@@ -85,6 +85,7 @@ kube ctx ls                 # list servers (* = current)
 kube ctx select <server>    # pick the server to deploy to (unique prefix ok)
 kube deploy .               # deploy the repo in the current directory
 kube deploy --ref feature/x # deploy a branch/tag/commit without checking it out (clean export, like CI)
+kube deploy --mode image .  # helm service: just `kubectl set image` (code-only change); --mode full = helm upgrade + db-migrator; default auto picks
 ```
 
 `deploy` reads the same target/host config (`~/.k3sdeploy/state.json`) the TUI

@@ -154,6 +154,7 @@ kube ctx ls               # 列出 server，* 是目前選擇
 kube ctx select <server>  # 選擇要部署的 server（唯一前綴即可）
 kube deploy .             # 部署當下目錄的 repo（路徑可省略，預設 "."）
 kube deploy --ref <ref> . # 部署指定分支/tag/commit，不切換 checkout；一律從乾淨的 git 匯出 build（未 commit、gitignore 的檔案不會進 image）
+kube deploy --mode image|full|auto .  # helm 管的服務：image = 只 kubectl set image（只改程式碼時）；full = helmster + helm upgrade（跑 db-migrator、套 appcfg，同 CI）；auto（預設）= 自上次 full 部署以來 appcfg / Migrations / DbMigrator / charts 有變或無法判斷就 full，否則 image
 ```
 
 用的是 TUI wizard 存的同一份 target 設定，事件逐行印出。前置：

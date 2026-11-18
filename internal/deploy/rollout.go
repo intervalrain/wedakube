@@ -12,9 +12,16 @@ import (
 )
 
 // SetImage 更新既有 deployment 的 image（OTA / 版本 bump）。
+// The container is the Deployment's first one (helm charts may not name it after the
+// service); it falls back to the service name.
 func SetImage(ctx context.Context, ssh *cluster.SSH, t config.Target, tag string) error {
+	container := t.Service
+	if out, err := ssh.Run(ctx, fmt.Sprintf("kubectl -n %s get deploy/%s -o jsonpath='{.spec.template.spec.containers[0].name}'",
+		t.Namespace, t.Service)); err == nil && strings.TrimSpace(string(out)) != "" {
+		container = strings.TrimSpace(string(out))
+	}
 	cmd := fmt.Sprintf("kubectl -n %s set image deploy/%s %s=%s:%s",
-		t.Namespace, t.Service, t.Service, t.ImageRepo, tag)
+		t.Namespace, t.Service, container, t.ImageRepo, tag)
 	_, err := ssh.Run(ctx, cmd)
 	return err
 }

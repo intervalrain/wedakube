@@ -5,6 +5,20 @@ via `git describe --tags --dirty`.
 
 ## Unreleased
 
+### Added
+
+- **Two deploy modes for helm-managed services**, `kube deploy --mode auto|image|full`:
+  - `image`: `kubectl set image` on the existing Deployment (fast; skips helm, the
+    db-migrator Job and appcfg: env, traefik routes, ECO).
+  - `full`: helmster gen + helm upgrade, as CI (db-migrator runs, appcfg applied).
+  - `auto` (default): `full` when appcfg, `Migrations/`, a `*DbMigrator` project or
+    `charts/` changed since the release's last full deploy (its `app_version`), or when
+    that commit is unknown (e.g. the release came from CI); `image` otherwise. The choice
+    and its reason are printed.
+  - Every build records `image:tag -> commit` in `state.json` (`builds`) for that diff.
+  - `set image` targets the Deployment's first container instead of assuming it is named
+    after the service.
+
 ### Changed
 
 - **Deploys build what CI builds.** `kube deploy` no longer uses the working tree as the

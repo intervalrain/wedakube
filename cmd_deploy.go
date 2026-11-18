@@ -75,7 +75,8 @@ func runDeploy(args []string) {
 	} else if h, ok, _ := store.GetHost(t.SSHAlias); ok {
 		hp = h.Helm
 	}
-	tag, err := deploy.Deploy(context.Background(), ssh, store, t, hp, date, feedPAT, opts.ref, true, emit)
+	mode, _ := deploy.ParseMode(opts.mode)
+	tag, err := deploy.Deploy(context.Background(), ssh, store, t, hp, date, feedPAT, opts.ref, mode, true, emit)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "deploy failed:", err)
 		os.Exit(1)
@@ -111,16 +112,24 @@ func resolveHost(store *config.Store, t config.Target) config.Host {
 	return config.Host{Name: t.SSHAlias, Alias: t.SSHAlias, Namespace: t.Namespace}
 }
 
-const deployUsage = `usage: kube deploy [--ref <branch|tag|commit>] [repoPath]
+const deployUsage = `usage: kube deploy [--ref <branch|tag|commit>] [--mode auto|image|full] [repoPath]
 
 Builds a clean export of the ref (default HEAD) with its submodules at their pinned
 commits, like CI: uncommitted and gitignored files never reach the image. The checkout
 is not touched, so any branch can be deployed without switching to it.
+
+--mode (helm-managed services only):
+  image  kubectl set image on the existing Deployment. Fast; skips helm, the
+         db-migrator Job and appcfg (env, traefik routes, ECO).
+  full   helmster gen + helm upgrade, as CI: runs the db-migrator, applies appcfg.
+  auto   (default) full when appcfg, migrations, the DbMigrator or a chart changed
+         since the release's last full deploy, or when that is unknown; else image.
 `
 
 type deployOpts struct {
 	repo string
 	ref  string
+	mode string
 	help bool
 }
 
@@ -143,6 +152,20 @@ func parseDeployArgs(args []string) (deployOpts, error) {
 			o.ref = strings.TrimPrefix(a, "--ref=")
 			if o.ref == "" {
 				return o, fmt.Errorf("--ref needs a value")
+			}
+		case a == "--mode":
+			if i+1 >= len(args) {
+				return o, fmt.Errorf("--mode needs a value")
+			}
+			i++
+			o.mode = args[i]
+			if _, err := deploy.ParseMode(o.mode); err != nil {
+				return o, err
+			}
+		case strings.HasPrefix(a, "--mode="):
+			o.mode = strings.TrimPrefix(a, "--mode=")
+			if _, err := deploy.ParseMode(o.mode); err != nil {
+				return o, err
 			}
 		case strings.HasPrefix(a, "-"):
 			return o, fmt.Errorf("unknown flag %s", a)
