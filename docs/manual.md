@@ -145,14 +145,18 @@ kubectl -n <ns> logs <pod> --previous --tail=50   # crash 原因
 
 ---
 
-## 7. Headless 部署（CI / 腳本用）
+## 7. CLI 模式（CI / 腳本用）
 
 ```bash
-kube deploy ~/path/to/service-repo
+kube ctx ls               # 列出 server，* 是目前選擇
+kube ctx select <server>  # 選擇要部署的 server（唯一前綴即可）
+kube deploy .             # 部署當下目錄的 repo（路徑可省略，預設 "."）
 ```
 
 用的是 TUI wizard 存的同一份 target 設定，事件逐行印出。前置：
-`FEED_PAT` 已設、`docker login` 過。
+`FEED_PAT` 已設、`docker login` 過、該 repo 已在 wizard 設定過 target。
+有用 `ctx select` 選 server 時，部署會覆寫 target 原本的 host，
+namespace 也改用該 server 的推導值。
 
 ---
 

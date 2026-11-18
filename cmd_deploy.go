@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/intervalrain/wedakube/internal/cluster"
@@ -11,30 +12,41 @@ import (
 	"github.com/intervalrain/wedakube/internal/deploy"
 )
 
-// runDeploy 是 M2 的 headless 進入點：go run . deploy <repoPath>
-// 真正接進 TUe 之前，先用這個跑完整 pipeline。
+// runDeploy 是 CLI 模式的部署進入點：kube deploy [repoPath]
+// repoPath 省略或 "." = 當下目錄；target 需先在 TUI wizard 設定過。
+// 有用 `kube ctx select` 選 server 時，優先部署到該 server。
 // 前置：(1) FEED_PAT 已設定（env 或 secrets.json）  (2) docker login <your-registry>
 func runDeploy(args []string) {
-	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "usage: wedakube deploy <repoPath>")
-		os.Exit(2)
+	repo := "."
+	if len(args) > 0 {
+		repo = args[0]
 	}
-	repo := args[0]
 
 	store, err := config.DefaultStore()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "store:", err)
 		os.Exit(1)
 	}
-	t, ok, err := store.GetTarget(repo)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "load target:", err)
-		os.Exit(1)
-	}
+	t, ok := lookupTarget(store, repo)
 	if !ok {
-		fmt.Fprintf(os.Stderr, "no deploy target configured for %s\n", repo)
+		fmt.Fprintf(os.Stderr, "no deploy target configured for %s\nrun `kube` and use the wizard (w) to configure this repo first\n", repo)
 		os.Exit(1)
 	}
+
+	// ctx 覆寫：CLI 選了 server 就部到那台；換台時 namespace 改用該台的推導值。
+	if cur, _ := store.CurrentHost(); cur != "" && cur != t.Host {
+		h, ok, _ := store.GetHost(cur)
+		if !ok {
+			fmt.Fprintf(os.Stderr, "current server %q no longer exists — fix with `kube ctx select`\n", cur)
+			os.Exit(1)
+		}
+		t.Host = h.Name
+		t.SSHAlias = h.Name
+		if ns := h.DerivedNamespace(); ns != "" {
+			t.Namespace = ns
+		}
+	}
+	fmt.Printf("deploying %s => %s (ns %s)\n", t.Service, t.Host, t.Namespace)
 
 	ssh := cluster.NewSSH(resolveHost(store, t))
 	defer ssh.Close()
@@ -61,6 +73,24 @@ func runDeploy(args []string) {
 		os.Exit(1)
 	}
 	fmt.Println("✓ deployed", t.Service, "=>", tag)
+}
+
+// lookupTarget 用 repoPath 查 target：先照原樣，再試絕對路徑，最後試解完 symlink 的路徑
+// （wizard 存的是絕對路徑，CLI 常給 "." 或相對路徑）。
+func lookupTarget(store *config.Store, repo string) (config.Target, bool) {
+	tryKeys := []string{repo}
+	if abs, err := filepath.Abs(repo); err == nil {
+		tryKeys = append(tryKeys, abs)
+		if real, err := filepath.EvalSymlinks(abs); err == nil {
+			tryKeys = append(tryKeys, real)
+		}
+	}
+	for _, k := range tryKeys {
+		if t, ok, err := store.GetTarget(k); err == nil && ok {
+			return t, true
+		}
+	}
+	return config.Target{}, false
 }
 
 // resolveHost 從 target 取得連線設定：優先用 t.Host 查 store，否則退回 SSHAlias（alias-only）。

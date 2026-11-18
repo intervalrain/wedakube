@@ -8,10 +8,11 @@ import (
 
 // State 是落地在 ~/.k3sdeploy/state.json 的全部設定。
 type State struct {
-	Hosts    []Host              `json:"hosts"`    // 受管主機
-	Pins     map[string][]string `json:"pins"`     // key = host.Name -> 服務名清單
-	Targets  map[string]Target   `json:"targets"`  // key = repoPath
-	Counters map[string]int      `json:"counters"` // key = service|YYYYMMDD -> 當日 build 序號
+	Hosts       []Host              `json:"hosts"`                 // 受管主機
+	CurrentHost string              `json:"currentHost,omitempty"` // CLI `kube ctx select` 選定的 host（Host.Name）
+	Pins        map[string][]string `json:"pins"`                  // key = host.Name -> 服務名清單
+	Targets     map[string]Target   `json:"targets"`               // key = repoPath
+	Counters    map[string]int      `json:"counters"`              // key = service|YYYYMMDD -> 當日 build 序號
 }
 
 type Store struct{ path string }
@@ -109,6 +110,25 @@ func (s *Store) DeleteHost(name string) error {
 	}
 	st.Hosts = out
 	delete(st.Pins, name)
+	if st.CurrentHost == name {
+		st.CurrentHost = ""
+	}
+	return s.save(st)
+}
+
+// CurrentHost 回傳 CLI 選定的 host 名稱（可能為空 = 未選）。
+func (s *Store) CurrentHost() (string, error) {
+	st, err := s.load()
+	return st.CurrentHost, err
+}
+
+// SetCurrentHost 設定 CLI 的目前 host；不驗證存在與否，由呼叫端把關。
+func (s *Store) SetCurrentHost(name string) error {
+	st, err := s.load()
+	if err != nil {
+		return err
+	}
+	st.CurrentHost = name
 	return s.save(st)
 }
 

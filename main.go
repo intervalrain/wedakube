@@ -23,12 +23,35 @@ func main() {
 		case "deploy":
 			runDeploy(os.Args[2:])
 			return
+		case "ctx":
+			runCtx(os.Args[2:])
+			return
 		case "version", "--version", "-v":
 			fmt.Printf("kube %s (%s, built %s)\n", version, commit, date)
 			return
+		case "help", "--help", "-h":
+			printUsage()
+			return
+		default:
+			fmt.Fprintf(os.Stderr, "unknown command %q\n\n", os.Args[1])
+			printUsage()
+			os.Exit(2)
 		}
 	}
 	runTUI()
+}
+
+func printUsage() {
+	fmt.Print(`kube — WEDA k3s ops console
+
+usage:
+  kube                    launch the TUI
+  kube ctx                show current server
+  kube ctx ls             list servers (* = current)
+  kube ctx select <s>     select server (unique prefix ok)
+  kube deploy [path]      deploy the repo at path (default ".")
+  kube version            print version
+`)
 }
 
 func runTUI() {

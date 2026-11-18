@@ -77,14 +77,19 @@ both:
 
 Without these, `D` is greyed out and the LIFECYCLE hint shows what's missing.
 
-## Headless deploy
+## CLI mode
 
 ```bash
-kube deploy /path/to/repo
+kube ctx ls                 # list servers (* = current)
+kube ctx select <server>    # pick the server to deploy to (unique prefix ok)
+kube deploy .               # deploy the repo in the current directory
 ```
 
-Reads the same target/host config (`~/.k3sdeploy/state.json`) and streams
-deploy events to stdout. Useful from CI or scripts.
+`deploy` reads the same target/host config (`~/.k3sdeploy/state.json`) the TUI
+wizard writes and streams deploy events to stdout — useful from CI or scripts.
+The path defaults to `.`; the target must have been configured once via the
+TUI wizard. If a server is selected with `ctx select`, it overrides the
+target's host (and the namespace follows that server's derived namespace).
 
 ## State
 
