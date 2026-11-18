@@ -50,6 +50,7 @@ func HelmsterDeploy(ctx context.Context, ssh *cluster.SSH, t config.Target, hp c
 		"cd " + remoteDir + " && helm upgrade --install " + svc + " ./output/" + svc,
 		"-n " + ns,
 		"--create-namespace",
+		serviceTypeFlag(ctx, ssh, ns, svc),
 		setQ("global.repo.registry", hp.Registry),
 		setQ("global.repo.project", hp.Project),
 		setQ("global.domain", hp.Domain),
@@ -77,6 +78,22 @@ func HelmsterDeploy(ctx context.Context, ssh *cluster.SSH, t config.Target, hp c
 		}
 	}
 	return nil
+}
+
+// serviceTypeFlag 把 Service 現在的 .spec.type 明講給 helm。
+// 有人用 kubectl patch 動過 type（例如開 NodePort 看 swagger）之後，
+// helm 的 server-side apply 會跟 kubectl-patch 這個 field manager 撞成 conflict；
+// 帶入相同的值就變成共同持有，不會衝突，也保住既有的 nodePort。
+func serviceTypeFlag(ctx context.Context, ssh *cluster.SSH, ns, svc string) string {
+	out, err := ssh.Run(ctx, fmt.Sprintf("kubectl -n %s get svc %s -o jsonpath='{.spec.type}' 2>/dev/null", ns, svc))
+	if err != nil {
+		return ""
+	}
+	st := strings.TrimSpace(string(out))
+	if st == "" {
+		return ""
+	}
+	return setQ("service.type", st)
 }
 
 // HelmRollback 退一個 release 的版本（取代 M2 的 kubectl rollout undo）。
