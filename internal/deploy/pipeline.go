@@ -23,7 +23,16 @@ func Deploy(ctx context.Context, ssh *cluster.SSH, store *config.Store, t config
 	tag := BuildTag(t.VersionBase, date, n)
 	emit(Event{Phase: "tag", Msg: tag, Pct: -1})
 
-	if err := BuildAndPush(ctx, t, tag, feedPAT, emit); err != nil {
+	// build 前先偵測目標 node 的 os/arch，讓 --platform 跟著 node 走（amd64 / arm64 都通）。
+	platform, perr := cluster.NodePlatform(ctx, ssh)
+	if perr != nil {
+		platform = DefaultPlatform
+		emit(Event{Phase: "platform", Msg: fmt.Sprintf("detect failed (%v), fallback %s", perr, platform), Pct: -1})
+	} else {
+		emit(Event{Phase: "platform", Msg: platform, Pct: -1})
+	}
+
+	if err := BuildAndPush(ctx, t, tag, platform, feedPAT, emit); err != nil {
 		return tag, fmt.Errorf("build: %w", err)
 	}
 

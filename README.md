@@ -71,7 +71,8 @@ it back, `D` deletes the registration. All writes are confirm-gated.
 For `D deploy` to be available on a service, the bound repo must contain
 both:
 
-- `Dockerfile` (multi-stage; targets `linux/amd64`)
+- `Dockerfile` (multi-stage; build platform is auto-detected from the
+  target node's os/arch, falling back to `linux/amd64`)
 - `appcfg.yaml` (helmster's app schema — name / version / port / health /
   optional backing services)
 

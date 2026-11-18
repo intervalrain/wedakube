@@ -23,14 +23,21 @@ func ResolveFeedPAT(store *config.Store) string {
 	return ""
 }
 
-// BuildAndPush 用 buildx 建 linux/amd64 image 並推到 registry，一步完成。
-// 本地是 arm64、node 是 amd64，所以 --platform 不可省。feedPAT 帶入私有 NuGet restore。
-func BuildAndPush(ctx context.Context, t config.Target, tag, feedPAT string, emit Emitter) error {
+// DefaultPlatform 是偵測不到 node 架構時的保底值（dev 叢集絕大多數是 amd64）。
+const DefaultPlatform = "linux/amd64"
+
+// BuildAndPush 用 buildx 建指定 platform 的 image 並推到 registry，一步完成。
+// 本地架構（如 arm64 Mac）常和 node 不同，所以 --platform 不可省；
+// platform 由 Deploy 在 build 前對目標 node 偵測而來。feedPAT 帶入私有 NuGet restore。
+func BuildAndPush(ctx context.Context, t config.Target, tag, platform, feedPAT string, emit Emitter) error {
 	image := t.ImageRepo + ":" + tag
+	if platform == "" {
+		platform = DefaultPlatform
+	}
 
 	args := []string{
 		"buildx", "build",
-		"--platform", "linux/amd64",
+		"--platform", platform,
 		"-f", t.Dockerfile,
 		"-t", image,
 		"--push",

@@ -158,8 +158,8 @@ func ServiceGuideContent(h config.Host, ns, svc string, t *config.Target) string
 	if t != nil {
 		image := t.ImageRepo + ":" + t.VersionBase + "_<YYYYMMDD>.<N>"
 		b.WriteString("\n" + section("build & push（本機執行）",
-			"# 本機 arm64 → node amd64，--platform 不可省",
-			"docker buildx build --platform linux/amd64 \\",
+			"# 本機架構常與 node 不同，--platform 不可省（kube deploy 會自動偵測 node 架構）",
+			"docker buildx build --platform linux/amd64 \\   # 依 node 換 linux/arm64",
 			"  -f "+t.Dockerfile+" \\",
 			"  -t "+image+" \\",
 			"  --push "+t.Context,

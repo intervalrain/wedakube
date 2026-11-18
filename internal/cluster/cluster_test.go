@@ -90,3 +90,27 @@ func TestSampleHelmParamsIntegration(t *testing.T) {
 		}
 	}
 }
+
+func TestParseUnamePlatform(t *testing.T) {
+	cases := map[string]string{
+		"Linux x86_64\n": "linux/amd64",
+		"Linux aarch64":  "linux/arm64",
+		"Darwin arm64":   "darwin/arm64",
+		"Linux armv7l":   "linux/arm/v7",
+	}
+	for in, want := range cases {
+		got, err := parseUnamePlatform(in)
+		if err != nil {
+			t.Errorf("parseUnamePlatform(%q): %v", in, err)
+			continue
+		}
+		if got != want {
+			t.Errorf("parseUnamePlatform(%q) = %q, want %q", in, got, want)
+		}
+	}
+	for _, in := range []string{"", "Linux", "Linux riscv64"} {
+		if _, err := parseUnamePlatform(in); err == nil {
+			t.Errorf("parseUnamePlatform(%q): expected error", in)
+		}
+	}
+}

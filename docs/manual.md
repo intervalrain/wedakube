@@ -110,8 +110,10 @@ k9s 風格表格，每 3 秒自動刷新。`◆` 開頭 = 已綁定本機 repo�
 ```
 tag：{versionBase}_{YYYYMMDD}.{N}     ← N 每天自動遞增
   ↓
-docker buildx build --platform linux/amd64 --push
-  ↓                                   ← 本機 arm64 → node amd64，不會推錯架構
+偵測 node 架構（kubectl nodeInfo → uname 保底 linux/amd64）
+  ↓
+docker buildx build --platform <node os/arch> --push
+  ↓                                   ← 本機架構與 node 不同也不會推錯架構
 repo 有 appcfg.yaml 或已是 helm release？
   ├─ 是 → scp appcfg → helmster gen → helm upgrade --install（官方路徑，ECO 接管）
   └─ 否 → kubectl set image（既有）/ 首次 apply 最小 manifest

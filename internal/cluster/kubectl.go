@@ -46,6 +46,47 @@ func ListNamespaces(ctx context.Context, ssh *SSH) ([]string, error) {
 	return names, nil
 }
 
+// NodePlatform 偵測目標 node 的 image platform（給 docker buildx --platform 用）。
+// 先問 kubectl（nodeInfo 回報的 os/arch 已是 GOOS/GOARCH 格式，最準），
+// kubectl 不通（權限 / 還沒裝）再退回 uname -sm 推導。
+func NodePlatform(ctx context.Context, ssh *SSH) (string, error) {
+	out, err := ssh.Run(ctx, `kubectl get nodes -o jsonpath='{range .items[*]}{.status.nodeInfo.operatingSystem}/{.status.nodeInfo.architecture}{"\n"}{end}'`)
+	if err == nil {
+		// 多 node 混架構時取第一個 —— dev 叢集幾乎都是單 node，混架構屬例外。
+		for _, line := range strings.Split(string(out), "\n") {
+			if p := strings.TrimSpace(line); p != "" && p != "/" {
+				return p, nil
+			}
+		}
+	}
+	out, err = ssh.Run(ctx, "uname -sm")
+	if err != nil {
+		return "", fmt.Errorf("detect node platform: %w", err)
+	}
+	return parseUnamePlatform(string(out))
+}
+
+// parseUnamePlatform 把 `uname -sm` 輸出（如 "Linux x86_64"）轉成 docker platform 字串。
+func parseUnamePlatform(s string) (string, error) {
+	f := strings.Fields(s)
+	if len(f) < 2 {
+		return "", fmt.Errorf("unexpected uname output %q", strings.TrimSpace(s))
+	}
+	osName := strings.ToLower(f[0])
+	arch := ""
+	switch f[1] {
+	case "x86_64", "amd64":
+		arch = "amd64"
+	case "aarch64", "arm64":
+		arch = "arm64"
+	case "armv7l":
+		arch = "arm/v7"
+	default:
+		return "", fmt.Errorf("unknown machine arch %q", f[1])
+	}
+	return osName + "/" + arch, nil
+}
+
 // ResolveWedaNamespace 找出結尾為 -weda 的 tenant namespace（README 的作法）。
 func ResolveWedaNamespace(ctx context.Context, ssh *SSH) (string, error) {
 	out, err := ssh.Run(ctx, `kubectl get ns -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}'`)
