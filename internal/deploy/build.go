@@ -43,7 +43,12 @@ func BuildAndPush(ctx context.Context, t config.Target, tag, platform, feedPAT s
 		"--push",
 	}
 	if feedPAT != "" {
-		args = append(args, "--build-arg", "FEED_PAT="+feedPAT)
+		// 各 repo 的 ARG 名稱不一致（FEED_PAT / FEED_TOKEN），兩個都帶；
+		// Dockerfile 沒宣告的那個 docker 只會警告，不影響 build。
+		args = append(args,
+			"--build-arg", "FEED_PAT="+feedPAT,
+			"--build-arg", "FEED_TOKEN="+feedPAT,
+		)
 	}
 	args = append(args, t.Context)
 
