@@ -2,6 +2,7 @@ package deploy
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -78,6 +79,73 @@ func HelmsterDeploy(ctx context.Context, ssh *cluster.SSH, t config.Target, hp c
 		}
 	}
 	return nil
+}
+
+// HelmsterAvailable 檢查 node 上有沒有 helmster 執行檔。
+// 不是每台 node 都裝了（dev node 常常只有 helm），沒有就得走 OCI chart fallback。
+func HelmsterAvailable(ctx context.Context, ssh *cluster.SSH) bool {
+	out, err := ssh.Run(ctx, "command -v helmster >/dev/null 2>&1 && echo yes || echo no")
+	return err == nil && strings.TrimSpace(string(out)) == "yes"
+}
+
+// HelmChartUpgrade 是沒有 helmster 時的 fallback：直接拿 registry 上現成的 OCI chart，
+// --reuse-values 沿用既有 release 的設定，只換 image.tag。
+// 因為不重跑 helmster gen，appcfg.yaml 的變更不會生效——呼叫端要提醒使用者。
+func HelmChartUpgrade(ctx context.Context, ssh *cluster.SSH, t config.Target, hp config.HelmParams, release, ns, tag string, emit Emitter) error {
+	chartVer, err := helmChartVersion(ctx, ssh, release, ns)
+	if err != nil {
+		return fmt.Errorf("resolve chart version for %s: %w", release, err)
+	}
+	chart := fmt.Sprintf("oci://%s/%s/charts/%s", hp.Registry, hp.Project, basenameOf(t.ImageRepo))
+
+	emit(Event{Phase: "helm-upgrade", Msg: "no helmster on node — OCI chart " + chart + ":" + chartVer + " (appcfg.yaml changes NOT applied)", Pct: -1})
+	cmd := strings.Join([]string{
+		"helm upgrade " + release + " " + chart,
+		"--version " + chartVer,
+		"-n " + ns,
+		"--reuse-values",
+		serviceTypeFlag(ctx, ssh, ns, t.Service),
+		setQ("image.tag", tag),
+		"2>&1",
+	}, " ")
+	out, err := ssh.Run(ctx, cmd)
+	if err != nil {
+		return fmt.Errorf("helm: %w: %s", err, string(out))
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		if strings.HasPrefix(line, "STATUS:") || strings.HasPrefix(line, "REVISION:") {
+			emit(Event{Phase: "helm-upgrade", Msg: line, Pct: -1})
+		}
+	}
+	return nil
+}
+
+// helmChartVersion 從 helm list 取得 release 目前用的 chart 版本。
+// chart 欄位長得像 "device-shadows-1.1.1-20260724.1"，去掉 "<name>-" 前綴就是版本。
+func helmChartVersion(ctx context.Context, ssh *cluster.SSH, release, ns string) (string, error) {
+	out, err := ssh.Run(ctx, fmt.Sprintf("helm list -n %s -o json --filter '^%s$'", ns, release))
+	if err != nil {
+		return "", err
+	}
+	return parseChartVersion(out, release)
+}
+
+func parseChartVersion(out []byte, release string) (string, error) {
+	var rows []struct {
+		Name  string `json:"name"`
+		Chart string `json:"chart"`
+	}
+	if err := json.Unmarshal(out, &rows); err != nil {
+		return "", err
+	}
+	for _, r := range rows {
+		if r.Name == release && r.Chart != "" {
+			if v := strings.TrimPrefix(r.Chart, r.Name+"-"); v != r.Chart {
+				return v, nil
+			}
+		}
+	}
+	return "", fmt.Errorf("release %q not found in helm list", release)
 }
 
 // serviceTypeFlag 把 Service 現在的 .spec.type 明講給 helm。

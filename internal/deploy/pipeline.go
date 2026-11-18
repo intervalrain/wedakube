@@ -55,8 +55,19 @@ func Deploy(ctx context.Context, ssh *cluster.SSH, store *config.Store, t config
 		if existingRelease != "" && releaseNS != "" {
 			t.Namespace = releaseNS
 		}
-		if err := HelmsterDeploy(ctx, ssh, t, hp, tag, emit); err != nil {
-			return tag, err
+		switch {
+		case HelmsterAvailable(ctx, ssh):
+			if err := HelmsterDeploy(ctx, ssh, t, hp, tag, emit); err != nil {
+				return tag, err
+			}
+		case existingRelease != "":
+			// node 沒裝 helmster，但服務已經是 helm release → 用 registry 上的 OCI chart 換 tag。
+			if err := HelmChartUpgrade(ctx, ssh, t, hp, existingRelease, releaseNS, tag, emit); err != nil {
+				return tag, err
+			}
+		default:
+			return tag, fmt.Errorf("no helmster on node and no existing helm release for %s — "+
+				"install helmster on the node, or deploy the service once via the infra pipeline first", t.Service)
 		}
 	} else {
 		exists := DeploymentExists(ctx, ssh, t)
