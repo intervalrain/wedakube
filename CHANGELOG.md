@@ -3,6 +3,28 @@
 All notable changes are kept here. Tags follow [SemVer](https://semver.org)
 via `git describe --tags --dirty`.
 
+## Unreleased
+
+### Changed
+
+- **Deploys build what CI builds.** `kube deploy` no longer uses the working tree as the
+  docker build context. It exports the committed tree of a ref plus every submodule at its
+  pinned commit (`internal/deploy/source.go`), so gitignored or uncommitted files never
+  reach the image. A local `appsettings.secrets.json` had been baked into a service image and
+  made it connect to `localhost`. A dirty working tree is reported, not built.
+- `kube deploy --ref <branch|tag|commit>` deploys any ref without switching the checkout.
+- The feed PAT is injected into `NuGet.Config` (`PAT_TOKEN_HERE`) in the export, as CI's
+  `sed` step does, for repos whose Dockerfile has no `ARG FEED_PAT`. The build args stay.
+- Helmster path: `appcfg.yaml`'s top-level `version` is set to the build tag before
+  `helmster gen`, like CI's `yq -i .version`, so pre-upgrade Jobs (db-migrator) pull the
+  image just pushed instead of the committed tag.
+
+### Fixed
+
+- A failed `helm upgrade` no longer prints the command with `global.eco.apiKey`; the key is
+  masked in helm and ssh output.
+- `kube deploy --help` / `-h` prints usage instead of looking up a target named `--help`.
+
 ## v0.0.3 — 2026-06-25
 
 ### Added

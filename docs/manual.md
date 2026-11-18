@@ -153,6 +153,7 @@ kubectl -n <ns> logs <pod> --previous --tail=50   # crash 原因
 kube ctx ls               # 列出 server，* 是目前選擇
 kube ctx select <server>  # 選擇要部署的 server（唯一前綴即可）
 kube deploy .             # 部署當下目錄的 repo（路徑可省略，預設 "."）
+kube deploy --ref <ref> . # 部署指定分支/tag/commit，不切換 checkout；一律從乾淨的 git 匯出 build（未 commit、gitignore 的檔案不會進 image）
 ```
 
 用的是 TUI wizard 存的同一份 target 設定，事件逐行印出。前置：

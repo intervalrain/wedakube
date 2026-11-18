@@ -3,7 +3,9 @@ package deploy
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -27,11 +29,30 @@ func HelmsterDeploy(ctx context.Context, ssh *cluster.SSH, t config.Target, hp c
 	remoteDir := filepath.Join(home, ".opsmanager/playbooks/roles/service", svc)
 	remoteFiles := filepath.Join(remoteDir, "files")
 
-	emit(Event{Phase: "scp", Msg: "appcfg.yaml -> " + remoteFiles, Pct: -1})
+	// Like CI, pin appcfg's version to this build's tag before helmster gen, so the chart's
+	// pre-upgrade Jobs (db-migrator) pull the image just pushed, not the committed tag.
+	appcfg, err := os.ReadFile(filepath.Join(t.Context, "appcfg.yaml"))
+	if err != nil {
+		return fmt.Errorf("read appcfg.yaml: %w", err)
+	}
+	tmp, err := os.CreateTemp("", "appcfg-*.yaml")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	if _, err := tmp.Write(withAppcfgVersion(appcfg, tag)); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+
+	emit(Event{Phase: "scp", Msg: "appcfg.yaml (version " + tag + ") -> " + remoteFiles, Pct: -1})
 	if _, err := ssh.Run(ctx, "mkdir -p "+remoteFiles); err != nil {
 		return fmt.Errorf("mkdir: %w", err)
 	}
-	if err := ssh.ScpUpload(ctx, filepath.Join(t.Context, "appcfg.yaml"), filepath.Join(remoteFiles, "appcfg.yaml")); err != nil {
+	if err := ssh.ScpUpload(ctx, tmp.Name(), filepath.Join(remoteFiles, "appcfg.yaml")); err != nil {
 		return err
 	}
 
@@ -70,7 +91,8 @@ func HelmsterDeploy(ctx context.Context, ssh *cluster.SSH, t config.Target, hp c
 	}, " ")
 	out, err := ssh.Run(ctx, cmd)
 	if err != nil {
-		return fmt.Errorf("helm: %w: %s", err, string(out))
+		// The command carries global.eco.apiKey; never echo it, and mask it in helm's output.
+		return fmt.Errorf("helm upgrade %s -n %s: %w: %s", svc, ns, redactErr(err, hp.EcoApiKey), redact(string(out), hp.EcoApiKey))
 	}
 	// 取 STATUS / REVISION 行做簡短回報
 	for _, line := range strings.Split(string(out), "\n") {
@@ -180,4 +202,12 @@ func basenameOf(imageRepo string) string {
 		return imageRepo[i+1:]
 	}
 	return imageRepo
+}
+
+// redactErr masks secrets in an error's text (ssh errors can quote the remote command).
+func redactErr(err error, secrets ...string) error {
+	if err == nil {
+		return nil
+	}
+	return errors.New(redact(err.Error(), secrets...))
 }

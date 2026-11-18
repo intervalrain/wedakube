@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/intervalrain/wedakube/internal/cluster"
@@ -17,10 +18,17 @@ import (
 // 有用 `kube ctx select` 選 server 時，優先部署到該 server。
 // 前置：(1) FEED_PAT 已設定（env 或 secrets.json）  (2) docker login <your-registry>
 func runDeploy(args []string) {
-	repo := "."
-	if len(args) > 0 {
-		repo = args[0]
+	opts, err := parseDeployArgs(args)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprint(os.Stderr, deployUsage)
+		os.Exit(2)
 	}
+	if opts.help {
+		fmt.Print(deployUsage)
+		return
+	}
+	repo := opts.repo
 
 	store, err := config.DefaultStore()
 	if err != nil {
@@ -67,7 +75,7 @@ func runDeploy(args []string) {
 	} else if h, ok, _ := store.GetHost(t.SSHAlias); ok {
 		hp = h.Helm
 	}
-	tag, err := deploy.Deploy(context.Background(), ssh, store, t, hp, date, feedPAT, true, emit)
+	tag, err := deploy.Deploy(context.Background(), ssh, store, t, hp, date, feedPAT, opts.ref, true, emit)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "deploy failed:", err)
 		os.Exit(1)
@@ -101,4 +109,49 @@ func resolveHost(store *config.Store, t config.Target) config.Host {
 		}
 	}
 	return config.Host{Name: t.SSHAlias, Alias: t.SSHAlias, Namespace: t.Namespace}
+}
+
+const deployUsage = `usage: kube deploy [--ref <branch|tag|commit>] [repoPath]
+
+Builds a clean export of the ref (default HEAD) with its submodules at their pinned
+commits, like CI: uncommitted and gitignored files never reach the image. The checkout
+is not touched, so any branch can be deployed without switching to it.
+`
+
+type deployOpts struct {
+	repo string
+	ref  string
+	help bool
+}
+
+// parseDeployArgs reads `[--ref R | --ref=R] [-h|--help] [repoPath]`.
+func parseDeployArgs(args []string) (deployOpts, error) {
+	o := deployOpts{repo: "."}
+	repoSet := false
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == "-h" || a == "--help":
+			o.help = true
+		case a == "--ref":
+			if i+1 >= len(args) || args[i+1] == "" {
+				return o, fmt.Errorf("--ref needs a value")
+			}
+			i++
+			o.ref = args[i]
+		case strings.HasPrefix(a, "--ref="):
+			o.ref = strings.TrimPrefix(a, "--ref=")
+			if o.ref == "" {
+				return o, fmt.Errorf("--ref needs a value")
+			}
+		case strings.HasPrefix(a, "-"):
+			return o, fmt.Errorf("unknown flag %s", a)
+		default:
+			if repoSet {
+				return o, fmt.Errorf("only one repoPath is allowed, got %q and %q", o.repo, a)
+			}
+			o.repo, repoSet = a, true
+		}
+	}
+	return o, nil
 }
