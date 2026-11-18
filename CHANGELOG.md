@@ -3,10 +3,17 @@
 All notable changes are kept here. Tags follow [SemVer](https://semver.org)
 via `git describe --tags --dirty`.
 
-## Unreleased
+## v0.0.4 — 2026-11-18
 
 ### Added
 
+- `kube ctx` / `kube ctx ls` / `kube ctx select <prefix>` pick the server that
+  `kube deploy` ships to (stored as `currentHost`); `kube deploy [path]` defaults to `.`.
+- Builds target the node's platform (kubectl nodeInfo, then `uname -sm`, then
+  linux/amd64), so arm64 nodes get arm64 images.
+- No helmster on the node but an existing helm release: `helm upgrade` on the registry's
+  OCI chart with `--reuse-values` and the new `image.tag` (appcfg changes not applied, with
+  a warning).
 - **Two deploy modes for helm-managed services**, `kube deploy --mode auto|image|full`:
   - `image`: `kubectl set image` on the existing Deployment (fast; skips helm, the
     db-migrator Job and appcfg: env, traefik routes, ECO).
@@ -35,6 +42,9 @@ via `git describe --tags --dirty`.
 
 ### Fixed
 
+- `helm upgrade` passes the Service's current `.spec.type` as `service.type`, so a Service
+  someone patched to NodePort keeps its type and nodePort.
+- The feed PAT is passed as both `FEED_PAT` and `FEED_TOKEN` build args.
 - A failed `helm upgrade` no longer prints the command with `global.eco.apiKey`; the key is
   masked in helm and ssh output.
 - `kube deploy --help` / `-h` prints usage instead of looking up a target named `--help`.
